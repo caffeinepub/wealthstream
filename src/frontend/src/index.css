@@ -1,0 +1,47 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #0b1220;
+  color: #e9eef2;
+  overflow-x: hidden;
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Glow animation for claim button */
+@keyframes emerald-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 15px rgba(31, 163, 106, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(31, 163, 106, 0.7);
+  }
+}
+
+.claim-pulse {
+  animation: emerald-pulse 2s ease-in-out infinite;
+}
