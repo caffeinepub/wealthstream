@@ -24,6 +24,7 @@ export interface BankDetails {
 
 export interface UserProfile {
   userId: Principal;
+  uniqueId: string;
   depositedBalance: bigint;
   withdrawableBalance: bigint;
   frozenBalance: bigint;

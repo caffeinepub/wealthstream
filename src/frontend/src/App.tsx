@@ -69,6 +69,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabName>("home");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminChecked, setIsAdminChecked] = useState(false);
   const [serverOffset, setServerOffset] = useState(0);
 
   // Auto-navigate to admin tab if URL hash contains the admin PIN
@@ -97,8 +98,14 @@ export default function App() {
     refreshProfile();
     actor
       .isCallerAdmin()
-      .then(setIsAdmin)
-      .catch(() => setIsAdmin(false));
+      .then((v) => {
+        setIsAdmin(v);
+        setIsAdminChecked(true);
+      })
+      .catch(() => {
+        setIsAdmin(false);
+        setIsAdminChecked(true);
+      });
     actor
       .getServerTime()
       .then((t) => {
@@ -125,7 +132,20 @@ export default function App() {
     );
   }
 
-  if (maintenanceMode && !isAdmin) {
+  if (
+    maintenanceMode &&
+    !isAdminChecked &&
+    identity &&
+    !identity.getPrincipal().isAnonymous()
+  ) {
+    return (
+      <div className="min-h-screen bg-[#0B1220] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (maintenanceMode && isAdminChecked && !isAdmin) {
     return (
       <>
         <MaintenanceOverlay />

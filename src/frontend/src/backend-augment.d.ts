@@ -48,6 +48,10 @@ declare module "./backend" {
       amount: bigint,
     ): Promise<{ ok: string } | { err: string }>;
     getAllWithdrawals(): Promise<{ ok: WithdrawalRequest[] } | { err: string }>;
+    getAllDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
+    rejectWithdrawal(
+      withdrawalId: bigint,
+    ): Promise<{ ok: string } | { err: string }>;
     getAllUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;
     isCallerAdmin(): Promise<boolean>;
     getCallerUserRole(): Promise<UserRole>;
@@ -92,6 +96,10 @@ declare module "./backend" {
       amount: bigint,
     ): Promise<{ ok: string } | { err: string }>;
     getAllWithdrawals(): Promise<{ ok: WithdrawalRequest[] } | { err: string }>;
+    getAllDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
+    rejectWithdrawal(
+      withdrawalId: bigint,
+    ): Promise<{ ok: string } | { err: string }>;
     getAllUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;
     isCallerAdmin(): Promise<boolean>;
     getCallerUserRole(): Promise<UserRole>;

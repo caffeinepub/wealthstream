@@ -29,8 +29,21 @@ actor class WealthStream() = this {
     lastUpdateMonth: Nat;
   };
 
+  // Stored type — no uniqueId (backward-compatible with existing stable data)
+  public type UserRecord = {
+    userId: Principal;
+    depositedBalance: Nat;
+    withdrawableBalance: Nat;
+    frozenBalance: Nat;
+    isAdmin: Bool;
+    isFlagged: Bool;
+    bankDetails: ?BankDetails;
+  };
+
+  // Full type returned to clients — includes uniqueId
   public type UserProfile = {
     userId: Principal;
+    uniqueId: Text;
     depositedBalance: Nat;
     withdrawableBalance: Nat;
     frozenBalance: Nat;
@@ -90,7 +103,10 @@ actor class WealthStream() = this {
 
   let accessControlState = AccessControl.initState();
 
-  var users = Map.empty<Principal, UserProfile>();
+  // Existing stable map — type unchanged, no migration error
+  var users = Map.empty<Principal, UserRecord>();
+  // Separate stable map for unique IDs — new, starts empty on upgrade (ok)
+  var userUniqueIds = Map.empty<Principal, Text>();
   var userClaimAttempts = Map.empty<Principal, [Int]>();
   var deposits = Map.empty<Nat, DepositRequest>();
   var slots = Map.empty<Nat, InvestmentSlot>();
@@ -99,6 +115,7 @@ actor class WealthStream() = this {
   var depositCounter : Nat = 0;
   var slotCounter : Nat = 0;
   var withdrawalCounter : Nat = 0;
+  var userCounter : Nat = 0;
 
   var upiConfig : UpiConfig = {
     upiId = "turbohacker4-2@okaxis";
@@ -112,13 +129,56 @@ actor class WealthStream() = this {
   let WINDOW_NS : Int = 300_000_000_000;
   let MIN_WITHDRAWAL : Nat = 200;
 
+  let CHARS : [Text] = ["A","B","C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V","W","X","Y","Z","2","3","4","5","6","7","8","9"];
+
   include MixinAuthorization(accessControlState);
 
-  func getOrCreateUser(caller : Principal) : UserProfile {
+  func generateUniqueId(counter : Nat) : Text {
+    let now = Int.abs(Time.now());
+    let seed = now + counter * 999983;
+    var result = "WS-";
+    var n = seed;
+    var i = 0;
+    while (i < 8) {
+      let idx = n % 32;
+      result := result # CHARS[idx];
+      n := n / 32 + (n % 7) * 1000003;
+      i += 1;
+    };
+    result
+  };
+
+  func getOrCreateUniqueId(caller : Principal) : Text {
+    switch (userUniqueIds.get(caller)) {
+      case (?uid) uid;
+      case null {
+        userCounter += 1;
+        let uid = generateUniqueId(userCounter);
+        userUniqueIds.add(caller, uid);
+        uid
+      };
+    }
+  };
+
+  func toProfile(rec : UserRecord) : UserProfile {
+    {
+      userId = rec.userId;
+      uniqueId = getOrCreateUniqueId(rec.userId);
+      depositedBalance = rec.depositedBalance;
+      withdrawableBalance = rec.withdrawableBalance;
+      frozenBalance = rec.frozenBalance;
+      isAdmin = rec.isAdmin;
+      isFlagged = rec.isFlagged;
+      bankDetails = rec.bankDetails;
+    }
+  };
+
+  func getOrCreateRecord(caller : Principal) : UserRecord {
     switch (users.get(caller)) {
       case (?u) u;
       case null {
-        let u : UserProfile = {
+        ignore getOrCreateUniqueId(caller);
+        let u : UserRecord = {
           userId = caller;
           depositedBalance = 0;
           withdrawableBalance = 0;
@@ -216,6 +276,14 @@ actor class WealthStream() = this {
     result
   };
 
+  func collectAllDeposits() : [DepositRequest] {
+    var result : [DepositRequest] = [];
+    for ((_, d) in deposits.entries()) {
+      result := result.concat([d]);
+    };
+    result
+  };
+
   func collectAllWithdrawals() : [WithdrawalRequest] {
     var result : [WithdrawalRequest] = [];
     for ((_, w) in withdrawals.entries()) {
@@ -227,7 +295,7 @@ actor class WealthStream() = this {
   func collectFlaggedUsers() : [UserProfile] {
     var result : [UserProfile] = [];
     for ((_, u) in users.entries()) {
-      if (u.isFlagged) result := result.concat([u]);
+      if (u.isFlagged) result := result.concat([toProfile(u)]);
     };
     result
   };
@@ -235,7 +303,7 @@ actor class WealthStream() = this {
   func collectAllUsers() : [UserProfile] {
     var result : [UserProfile] = [];
     for ((_, u) in users.entries()) {
-      result := result.concat([u]);
+      result := result.concat([toProfile(u)]);
     };
     result
   };
@@ -265,14 +333,14 @@ actor class WealthStream() = this {
   };
 
   public shared(msg) func getMyProfile() : async UserProfile {
-    getOrCreateUser(msg.caller)
+    toProfile(getOrCreateRecord(msg.caller))
   };
 
   public shared(msg) func purchaseSlot(amount : Nat, termsAccepted : Bool) : async R<Nat> {
     if (not termsAccepted) return #err("Must accept terms and conditions");
     if (not isValidAmount(amount)) return #err("Invalid investment amount");
     let caller = msg.caller;
-    ignore getOrCreateUser(caller);
+    ignore getOrCreateRecord(caller);
     depositCounter += 1;
     let req : DepositRequest = {
       id = depositCounter;
@@ -282,7 +350,7 @@ actor class WealthStream() = this {
       createdAt = Time.now();
     };
     deposits.add(depositCounter, req);
-    let user = getOrCreateUser(caller);
+    let user = getOrCreateRecord(caller);
     users.add(caller, { user with frozenBalance = user.frozenBalance + amount });
     #ok(depositCounter)
   };
@@ -363,7 +431,7 @@ actor class WealthStream() = this {
     accountNumber : Text, holderName : Text, phone : Text
   ) : async R<Text> {
     let caller = msg.caller;
-    let user = getOrCreateUser(caller);
+    let user = getOrCreateRecord(caller);
     let (year, month) = getCurrentYearMonth();
     let (updateCount, canUpdate) = switch (user.bankDetails) {
       case null (0, true);
@@ -423,6 +491,11 @@ actor class WealthStream() = this {
     #ok(collectPendingDeposits())
   };
 
+  public shared(msg) func getAllDeposits() : async R<[DepositRequest]> {
+    if (not isAdminCaller(msg.caller)) return #err("Not authorized");
+    #ok(collectAllDeposits())
+  };
+
   public shared(msg) func approveDeposit(depositId : Nat) : async R<Text> {
     if (not isAdminCaller(msg.caller)) return #err("Not authorized");
     switch (deposits.get(depositId)) {
@@ -431,7 +504,7 @@ actor class WealthStream() = this {
         switch (dep.status) {
           case (#Pending) {
             deposits.add(depositId, { dep with status = #Approved });
-            let user = getOrCreateUser(dep.userId);
+            let user = getOrCreateRecord(dep.userId);
             let startTime = Time.now();
             slotCounter += 1;
             let slot : InvestmentSlot = {
@@ -460,7 +533,7 @@ actor class WealthStream() = this {
       case null return #err("Deposit not found");
       case (?dep) {
         deposits.add(depositId, { dep with status = #Rejected });
-        let user = getOrCreateUser(dep.userId);
+        let user = getOrCreateRecord(dep.userId);
         let frozen = if (user.frozenBalance >= dep.amount) user.frozenBalance - dep.amount else 0;
         users.add(dep.userId, { user with frozenBalance = frozen });
         #ok("Deposit rejected")
@@ -489,9 +562,27 @@ actor class WealthStream() = this {
     }
   };
 
+  public shared(msg) func rejectWithdrawal(withdrawalId : Nat) : async R<Text> {
+    if (not isAdminCaller(msg.caller)) return #err("Not authorized");
+    switch (withdrawals.get(withdrawalId)) {
+      case null return #err("Not found");
+      case (?w) {
+        switch (w.status) {
+          case (#Pending) {
+            let user = getOrCreateRecord(w.userId);
+            withdrawals.add(withdrawalId, { w with status = #Rejected });
+            users.add(w.userId, { user with withdrawableBalance = user.withdrawableBalance + w.amount });
+            #ok("Withdrawal rejected and amount refunded")
+          };
+          case _ return #err("Not pending");
+        }
+      };
+    }
+  };
+
   public shared(msg) func addFunds(target : Principal, amount : Nat) : async R<Text> {
     if (not isAdminCaller(msg.caller)) return #err("Not authorized");
-    let user = getOrCreateUser(target);
+    let user = getOrCreateRecord(target);
     users.add(target, { user with depositedBalance = user.depositedBalance + amount });
     #ok("Funds added")
   };

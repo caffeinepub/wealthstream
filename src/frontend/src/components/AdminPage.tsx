@@ -128,7 +128,7 @@ export default function AdminPage({ actor }: Props) {
     setLoading(true);
     try {
       const [d, w, f, u] = await Promise.all([
-        actor.getPendingDeposits(),
+        actor.getAllDeposits(),
         actor.getAllWithdrawals(),
         actor.getFlaggedUsers(),
         actor.getAllUsers(),
@@ -196,6 +196,15 @@ export default function AdminPage({ actor }: Props) {
     } else toast.error(r.err);
   };
 
+  const rejectWithdrawal = async (id: bigint) => {
+    if (!actor) return;
+    const r = await actor.rejectWithdrawal(id);
+    if ("ok" in r) {
+      toast.success("Withdrawal rejected & refunded");
+      void load();
+    } else toast.error(r.err);
+  };
+
   const unflag = async (userId: { toString(): string }) => {
     if (!actor) return;
     const p = Principal.fromText(userId.toString());
@@ -257,9 +266,14 @@ export default function AdminPage({ actor }: Props) {
 
   const pendingDeposits = deposits.filter((d) => "Pending" in d.status);
   const pendingWithdrawals = withdrawals.filter((w) => "Pending" in w.status);
-  const filteredUsers = users.filter((u) =>
-    u.userId.toString().toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const filteredUsers = users.filter((u) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      u.userId.toString().toLowerCase().includes(q) ||
+      u.uniqueId?.toLowerCase().includes(q)
+    );
+  });
 
   const isSuspicious = (w: WithdrawalRequest) =>
     Number(w.amount) > 5000 ||
@@ -337,7 +351,10 @@ export default function AdminPage({ actor }: Props) {
             <button
               type="button"
               key={item.id}
-              onClick={() => setTab(item.id)}
+              onClick={() => {
+                setTab(item.id);
+                void load();
+              }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
               style={{
                 background: active ? "rgba(31,163,106,0.12)" : "transparent",
@@ -566,7 +583,7 @@ export default function AdminPage({ actor }: Props) {
       </div>
       <input
         type="text"
-        placeholder="Search by User ID..."
+        placeholder="Search by ID or Member ID..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         className="w-full px-4 py-2.5 rounded-xl text-white placeholder-[#A8B2BA] outline-none text-sm"
@@ -580,6 +597,14 @@ export default function AdminPage({ actor }: Props) {
       {filteredUsers.length === 0 ? (
         <div className="text-center py-10" data-ocid="admin.users_empty_state">
           <p className="text-[#A8B2BA] text-sm">No users found</p>
+          <button
+            onClick={() => void load()}
+            className="mt-3 px-4 py-2 text-xs rounded-lg text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/10 transition-colors"
+            type="button"
+            data-ocid="admin.users_reload_button"
+          >
+            ↺ Reload
+          </button>
         </div>
       ) : (
         <div className="space-y-2">
@@ -615,6 +640,20 @@ export default function AdminPage({ actor }: Props) {
                       >
                         {shortId(u.userId)}
                       </p>
+                      {u.uniqueId && u.uniqueId.trim() !== "" ? (
+                        <span
+                          className="text-xs font-mono px-1.5 py-0.5 rounded"
+                          style={{
+                            background: "rgba(255,215,0,0.1)",
+                            border: "1px solid rgba(255,215,0,0.3)",
+                            color: "#FFD700",
+                          }}
+                        >
+                          {u.uniqueId}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[#A8B2BA]">—</span>
+                      )}
                       {u.isAdmin && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400">
                           Admin
@@ -929,9 +968,31 @@ export default function AdminPage({ actor }: Props) {
             >
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <p className="text-xs font-mono" style={{ color: "#A8B2BA" }}>
-                    {shortId(d.userId)}
-                  </p>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p
+                      className="text-xs font-mono"
+                      style={{ color: "#A8B2BA" }}
+                    >
+                      {shortId(d.userId)}
+                    </p>
+                    {(() => {
+                      const u = users.find(
+                        (u) => u.userId.toString() === d.userId.toString(),
+                      );
+                      return u?.uniqueId && u.uniqueId.trim() !== "" ? (
+                        <span
+                          className="text-xs font-mono px-1.5 py-0.5 rounded"
+                          style={{
+                            background: "rgba(255,215,0,0.1)",
+                            border: "1px solid rgba(255,215,0,0.25)",
+                            color: "#FFD700",
+                          }}
+                        >
+                          {u.uniqueId}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
                   <p className="text-xl font-bold" style={{ color: "#D6B35A" }}>
                     {fmt(d.amount)}
                   </p>
@@ -1053,12 +1114,31 @@ export default function AdminPage({ actor }: Props) {
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <p
-                      className="text-xs font-mono"
-                      style={{ color: "#A8B2BA" }}
-                    >
-                      {shortId(w.userId)}
-                    </p>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p
+                        className="text-xs font-mono"
+                        style={{ color: "#A8B2BA" }}
+                      >
+                        {shortId(w.userId)}
+                      </p>
+                      {(() => {
+                        const u = users.find(
+                          (u) => u.userId.toString() === w.userId.toString(),
+                        );
+                        return u?.uniqueId && u.uniqueId.trim() !== "" ? (
+                          <span
+                            className="text-xs font-mono px-1.5 py-0.5 rounded"
+                            style={{
+                              background: "rgba(255,215,0,0.1)",
+                              border: "1px solid rgba(255,215,0,0.25)",
+                              color: "#FFD700",
+                            }}
+                          >
+                            {u.uniqueId}
+                          </span>
+                        ) : null;
+                      })()}
+                    </div>
                     <p className="text-xl font-bold text-white">
                       {fmt(w.amount)}
                     </p>
@@ -1109,17 +1189,32 @@ export default function AdminPage({ actor }: Props) {
                   </div>
                 </div>
                 {"Pending" in w.status && (
-                  <button
-                    type="button"
-                    onClick={() => completeWithdrawal(w.id)}
-                    className="mt-3 w-full py-2.5 rounded-xl text-sm font-semibold text-white"
-                    style={{
-                      background: "linear-gradient(135deg, #137A56, #1FA36A)",
-                    }}
-                    data-ocid={`admin.withdrawals_complete_button.${idx + 1}`}
-                  >
-                    ✓ Mark as Completed
-                  </button>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => completeWithdrawal(w.id)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
+                      style={{
+                        background: "linear-gradient(135deg, #137A56, #1FA36A)",
+                      }}
+                      data-ocid={`admin.withdrawals_complete_button.${idx + 1}`}
+                    >
+                      ✓ Mark Completed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => rejectWithdrawal(w.id)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-medium"
+                      style={{
+                        background: "rgba(239,68,68,0.1)",
+                        border: "1px solid rgba(239,68,68,0.3)",
+                        color: "#EF4444",
+                      }}
+                      data-ocid={`admin.withdrawals_reject_button.${idx + 1}`}
+                    >
+                      ✗ Reject
+                    </button>
+                  </div>
                 )}
               </div>
             );

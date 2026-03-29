@@ -26,6 +26,7 @@ export interface BankDetails {
 
 export interface UserProfile {
     userId: Principal;
+    uniqueId: string;
     depositedBalance: bigint;
     withdrawableBalance: bigint;
     frozenBalance: bigint;
@@ -90,11 +91,13 @@ export interface backendInterface {
     getMyWithdrawals(): Promise<WithdrawalRequest[]>;
     getBankDetails(): Promise<[] | [BankDetails]>;
     getPendingDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
+    getAllDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
     approveDeposit(depositId: bigint): Promise<{ ok: string } | { err: string }>;
     rejectDeposit(depositId: bigint): Promise<{ ok: string } | { err: string }>;
     getFlaggedUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;
     unflagUser(target: Principal): Promise<{ ok: string } | { err: string }>;
     completeWithdrawal(withdrawalId: bigint): Promise<{ ok: string } | { err: string }>;
+    rejectWithdrawal(withdrawalId: bigint): Promise<{ ok: string } | { err: string }>;
     addFunds(target: Principal, amount: bigint): Promise<{ ok: string } | { err: string }>;
     getAllWithdrawals(): Promise<{ ok: WithdrawalRequest[] } | { err: string }>;
     getAllUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;

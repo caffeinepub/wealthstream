@@ -1,3 +1,4 @@
+import { Check, Copy } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type {
@@ -36,6 +37,7 @@ export default function AccountPage({ profile, actor, onRefresh }: Props) {
   const [phone, setPhone] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     if (!actor) return;
@@ -157,8 +159,41 @@ export default function AccountPage({ profile, actor, onRefresh }: Props) {
             border: "1px solid rgba(255,255,255,0.08)",
           }}
         >
+          {profile.uniqueId && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-[#A8B2BA]">Member ID</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(profile.uniqueId);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg cursor-pointer"
+                style={{
+                  border: "1px solid rgba(255,215,0,0.4)",
+                  background: "rgba(255,215,0,0.08)",
+                  color: "#FFD700",
+                }}
+                data-ocid="account.member_id_button"
+              >
+                <span className="text-xs font-mono font-bold tracking-widest">
+                  {profile.uniqueId}
+                </span>
+                {copied ? <Check size={10} /> : <Copy size={10} />}
+              </button>
+              {copied && (
+                <span className="text-xs" style={{ color: "#1FA36A" }}>
+                  Copied!
+                </span>
+              )}
+            </div>
+          )}
           <p className="text-xs text-[#A8B2BA]">Principal ID</p>
-          <p className="text-sm font-mono text-white truncate">
+          <p
+            className="text-sm font-mono text-white truncate"
+            style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.7rem" }}
+          >
             {profile.userId.toString().slice(0, 20)}...
           </p>
           {profile.isFlagged && (
