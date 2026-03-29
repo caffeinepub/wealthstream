@@ -74,7 +74,23 @@ export interface IFSCResult {
   state: string;
 }
 
+export interface UpiConfig {
+  upiId: string;
+  accountName: string;
+  displayName: string;
+  customQrUrl: [] | [string];
+}
+
 export type UserRole = { admin: null } | { user: null } | { guest: null };
 
 import type { backendInterface } from "./backend";
-export type WealthActor = backendInterface;
+export interface WealthActorExtended extends backendInterface {
+  getUpiConfig(): Promise<UpiConfig>;
+  setUpiConfig(
+    upiId: string,
+    accountName: string,
+    displayName: string,
+    customQrUrl: [] | [string],
+  ): Promise<{ ok: string } | { err: string }>;
+}
+export type WealthActor = WealthActorExtended;

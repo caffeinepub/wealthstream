@@ -89,6 +89,12 @@ function getSimulatedActivity(userId: string) {
 
 export default function AdminPage({ actor }: Props) {
   const [tab, setTab] = useState<AdminTab>("dashboard");
+  const ADMIN_PIN = "09186114";
+  const [pinVerified, setPinVerified] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const [pinAttempts, setPinAttempts] = useState(0);
+
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [flagged, setFlagged] = useState<UserProfile[]>([]);
@@ -107,6 +113,15 @@ export default function AdminPage({ actor }: Props) {
     {},
   );
   const [frozenUsers, setFrozenUsers] = useState<Set<string>>(new Set());
+
+  const [upiForm, setUpiForm] = useState({
+    upiId: "",
+    accountName: "",
+    displayName: "",
+    customQrUrl: "",
+  });
+  const [upiLoading, setUpiLoading] = useState(false);
+  const [upiLoaded, setUpiLoaded] = useState(false);
 
   const load = useCallback(async () => {
     if (!actor) return;
@@ -132,6 +147,27 @@ export default function AdminPage({ actor }: Props) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadUpiConfig = useCallback(async () => {
+    if (!actor) return;
+    try {
+      const cfg = await (actor as any).getUpiConfig();
+      setUpiForm({
+        upiId: cfg.upiId,
+        accountName: cfg.accountName,
+        displayName: cfg.displayName,
+        customQrUrl:
+          cfg.customQrUrl.length > 0 ? String(cfg.customQrUrl[0]) : "",
+      });
+      setUpiLoaded(true);
+    } catch {
+      /* ignore */
+    }
+  }, [actor]);
+
+  useEffect(() => {
+    if (pinVerified) loadUpiConfig();
+  }, [pinVerified, loadUpiConfig]);
 
   const approveDeposit = async (id: bigint) => {
     if (!actor) return;
@@ -1373,25 +1409,125 @@ export default function AdminPage({ actor }: Props) {
           border: "1px solid rgba(255,255,255,0.07)",
         }}
       >
-        <p className="text-base font-bold text-white mb-3">
+        <p className="text-base font-bold text-white mb-4">
           💳 UPI Configuration
         </p>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span style={{ color: "#A8B2BA" }}>UPI ID</span>
-            <span className="font-mono" style={{ color: "#D6B35A" }}>
-              turbohacker4-2@okaxis
-            </span>
+        {!upiLoaded && (
+          <p className="text-sm" style={{ color: "#A8B2BA" }}>
+            Loading...
+          </p>
+        )}
+        {upiLoaded && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3">
+              {[
+                {
+                  label: "UPI ID",
+                  key: "upiId",
+                  placeholder: "e.g. name@okaxis",
+                },
+                {
+                  label: "Account Name",
+                  key: "accountName",
+                  placeholder: "Bank account name",
+                },
+                {
+                  label: "Display Name",
+                  key: "displayName",
+                  placeholder: "Shown to payers",
+                },
+                {
+                  label: "Custom QR URL (optional)",
+                  key: "customQrUrl",
+                  placeholder: "Leave blank to auto-generate from UPI ID",
+                },
+              ].map(({ label, key, placeholder }) => (
+                <div key={key}>
+                  <label
+                    htmlFor={`upi-${key}`}
+                    className="block text-xs mb-1"
+                    style={{ color: "#A8B2BA" }}
+                  >
+                    {label}
+                  </label>
+                  <input
+                    id={`upi-${key}`}
+                    type="text"
+                    value={upiForm[key as keyof typeof upiForm]}
+                    onChange={(e) =>
+                      setUpiForm((prev) => ({ ...prev, [key]: e.target.value }))
+                    }
+                    placeholder={placeholder}
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white outline-none"
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                    }}
+                  />
+                  {key === "customQrUrl" && (
+                    <p className="text-xs mt-1" style={{ color: "#A8B2BA" }}>
+                      Leave blank to auto-generate QR from UPI ID
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* QR Preview */}
+            <div className="flex flex-col items-center gap-2 py-3">
+              <p className="text-xs" style={{ color: "#A8B2BA" }}>
+                QR Preview
+              </p>
+              <div
+                className="rounded-xl overflow-hidden"
+                style={{ background: "white", padding: 6 }}
+              >
+                <img
+                  src={
+                    upiForm.customQrUrl
+                      ? upiForm.customQrUrl
+                      : `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`upi://pay?pa=${upiForm.upiId}&pn=${upiForm.displayName}`)}`
+                  }
+                  alt="QR Preview"
+                  width={150}
+                  height={150}
+                  style={{ display: "block" }}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={upiLoading}
+              onClick={async () => {
+                if (!actor) return;
+                setUpiLoading(true);
+                try {
+                  const res = await (actor as any).setUpiConfig(
+                    upiForm.upiId,
+                    upiForm.accountName,
+                    upiForm.displayName,
+                    upiForm.customQrUrl ? [upiForm.customQrUrl] : [],
+                  );
+                  if ("ok" in res) toast.success("UPI configuration saved!");
+                  else toast.error((res as { err: string }).err);
+                } catch {
+                  toast.error("Failed to save UPI config");
+                } finally {
+                  setUpiLoading(false);
+                }
+              }}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-white"
+              style={{
+                background: upiLoading
+                  ? "rgba(31,163,106,0.4)"
+                  : "linear-gradient(135deg, #137A56 0%, #1FA36A 100%)",
+                opacity: upiLoading ? 0.7 : 1,
+              }}
+              data-ocid="admin.upi_save_button"
+            >
+              {upiLoading ? "Saving..." : "💾 Save UPI Config"}
+            </button>
           </div>
-          <div className="flex justify-between">
-            <span style={{ color: "#A8B2BA" }}>Account Name</span>
-            <span className="text-white">Iqlas Dar</span>
-          </div>
-          <div className="flex justify-between">
-            <span style={{ color: "#A8B2BA" }}>QR Code</span>
-            <span style={{ color: "#1FA36A" }}>✓ Active</span>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Network Log */}
@@ -1478,6 +1614,104 @@ export default function AdminPage({ actor }: Props) {
     security: <SecurityAlerts />,
     settings: <SystemSettings />,
   };
+
+  if (!pinVerified) {
+    const handlePinSubmit = () => {
+      if (pinInput === ADMIN_PIN) {
+        setPinVerified(true);
+        setPinError(false);
+      } else {
+        setPinError(true);
+        setPinInput("");
+        setPinAttempts((a) => a + 1);
+      }
+    };
+    return (
+      <div
+        className="fixed inset-0 flex items-center justify-center"
+        style={{ background: "#080D14", zIndex: 40 }}
+      >
+        <div
+          style={{
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,215,0,0.3)",
+            borderRadius: 20,
+            padding: "48px 36px",
+            width: 340,
+            textAlign: "center",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+          }}
+        >
+          <div style={{ fontSize: 48, marginBottom: 8 }}>🔐</div>
+          <div
+            style={{
+              color: "#FFD700",
+              fontSize: 22,
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            Admin Access
+          </div>
+          <div style={{ color: "#888", fontSize: 13, marginBottom: 28 }}>
+            Enter your PIN to continue
+          </div>
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={8}
+            value={pinInput}
+            onChange={(e) => {
+              setPinInput(e.target.value);
+              setPinError(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handlePinSubmit();
+            }}
+            placeholder="••••••••"
+            style={{
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: 12,
+              border: pinError
+                ? "1.5px solid #ef4444"
+                : "1.5px solid rgba(255,215,0,0.4)",
+              background: "rgba(255,255,255,0.06)",
+              color: "#fff",
+              fontSize: 22,
+              letterSpacing: 8,
+              textAlign: "center",
+              outline: "none",
+              marginBottom: 8,
+            }}
+          />
+          {pinError && (
+            <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>
+              Incorrect PIN{pinAttempts >= 3 ? " — too many attempts" : ""}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handlePinSubmit}
+            style={{
+              marginTop: 16,
+              width: "100%",
+              padding: "14px 0",
+              borderRadius: 12,
+              background: "linear-gradient(135deg, #FFD700, #FFA500)",
+              color: "#000",
+              fontWeight: 700,
+              fontSize: 16,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            Unlock
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

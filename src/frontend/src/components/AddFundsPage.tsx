@@ -4,10 +4,6 @@ import type { WealthActor } from "../actorTypes";
 import TCModal from "./TCModal";
 
 const QUICK_AMOUNTS = [100, 300, 500, 800, 1200, 1500, 2200, 2800, 3100];
-const UPI_ID = "turbohacker4-2@okaxis";
-const QR_IMAGE =
-  "/assets/uploads/googlepay_qr-019d392b-712e-76a8-825e-5131e9f27761-1.png";
-
 type PayStep = "select" | "upi" | "proof" | "detecting";
 
 interface Props {
@@ -15,8 +11,8 @@ interface Props {
   onSuccess: () => Promise<void>;
 }
 
-function buildUpiLink(amount: number) {
-  return `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=WealthStream&am=${amount}&cu=INR`;
+function buildUpiLink(amount: number, upiId: string, displayName: string) {
+  return `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(displayName)}&am=${amount}&cu=INR`;
 }
 
 function savePaymentHistory(entry: {
@@ -45,6 +41,36 @@ export default function AddFundsPage({ actor, onSuccess }: Props) {
   const [tcOpen, setTcOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<PayStep>("select");
+  const [upiConfig, setUpiConfig] = useState<{
+    upiId: string;
+    displayName: string;
+    qrUrl: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!actor) return;
+    actor
+      .getUpiConfig()
+      .then((cfg) => {
+        const qr =
+          cfg.customQrUrl.length > 0
+            ? String(cfg.customQrUrl[0])
+            : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${cfg.upiId}&pn=${cfg.displayName}`)}`;
+        setUpiConfig({
+          upiId: cfg.upiId,
+          displayName: cfg.displayName,
+          qrUrl: qr,
+        });
+      })
+      .catch(() => {
+        setUpiConfig({
+          upiId: "turbohacker4-2@okaxis",
+          displayName: "WealthStream",
+          qrUrl:
+            "/assets/uploads/googlepay_qr-019d392b-712e-76a8-825e-5131e9f27761-1.png",
+        });
+      });
+  }, [actor]);
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [utr, setUtr] = useState("");
   const [countdown, setCountdown] = useState(300);
@@ -127,7 +153,11 @@ export default function AddFundsPage({ actor, onSuccess }: Props) {
 
   // --- UPI Payment Step ---
   if (step === "upi") {
-    const upiLink = buildUpiLink(selected!);
+    const upiLink = buildUpiLink(
+      selected!,
+      upiConfig?.upiId ?? "turbohacker4-2@okaxis",
+      upiConfig?.displayName ?? "WealthStream",
+    );
     const payApps = [
       { name: "BHIM", emoji: "🇮🇳", color: "#1565C0", href: upiLink },
       { name: "GPay", emoji: "💳", color: "#1A73E8", href: upiLink },
@@ -177,10 +207,15 @@ export default function AddFundsPage({ actor, onSuccess }: Props) {
           >
             <div
               className="rounded-xl overflow-hidden mb-3"
-              style={{ background: "white", padding: 8, maxWidth: 220 }}
+              style={{
+                background: "white",
+                padding: 8,
+                maxWidth: 220,
+                opacity: upiConfig ? 1 : 0.4,
+              }}
             >
               <img
-                src={QR_IMAGE}
+                src={upiConfig?.qrUrl ?? ""}
                 alt="UPI QR Code"
                 style={{ width: "100%", maxWidth: 220, display: "block" }}
               />
@@ -188,12 +223,12 @@ export default function AddFundsPage({ actor, onSuccess }: Props) {
             <p className="text-sm text-[#A8B2BA] mb-1">UPI ID</p>
             <div className="flex items-center gap-2">
               <code className="text-sm font-mono" style={{ color: "#D6B35A" }}>
-                {UPI_ID}
+                {upiConfig?.upiId ?? "..."}
               </code>
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(UPI_ID);
+                  navigator.clipboard.writeText(upiConfig?.upiId ?? "");
                   toast.success("UPI ID copied!");
                 }}
                 className="text-xs px-2 py-1 rounded-lg"

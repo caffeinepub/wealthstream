@@ -81,6 +81,13 @@ actor class WealthStream() = this {
     state: Text;
   };
 
+  public type UpiConfig = {
+    upiId: Text;
+    accountName: Text;
+    displayName: Text;
+    customQrUrl: ?Text;
+  };
+
   let accessControlState = AccessControl.initState();
 
   var users = Map.empty<Principal, UserProfile>();
@@ -92,6 +99,13 @@ actor class WealthStream() = this {
   var depositCounter : Nat = 0;
   var slotCounter : Nat = 0;
   var withdrawalCounter : Nat = 0;
+
+  var upiConfig : UpiConfig = {
+    upiId = "turbohacker4-2@okaxis";
+    accountName = "Iqlas Dar";
+    displayName = "WealthStream";
+    customQrUrl = null;
+  };
 
   let VALID_AMOUNTS : [Nat] = [100, 200, 300, 400, 500, 600, 700, 800, 1000, 3200];
   let HOUR_NS : Int = 3_600_000_000_000;
@@ -228,6 +242,26 @@ actor class WealthStream() = this {
 
   public query func getServerTime() : async Int {
     Time.now()
+  };
+
+  public query func getUpiConfig() : async UpiConfig {
+    upiConfig
+  };
+
+  public shared(msg) func setUpiConfig(
+    newUpiId : Text,
+    newAccountName : Text,
+    newDisplayName : Text,
+    newCustomQrUrl : ?Text
+  ) : async R<Text> {
+    if (not isAdminCaller(msg.caller)) return #err("Not authorized");
+    upiConfig := {
+      upiId = newUpiId;
+      accountName = newAccountName;
+      displayName = newDisplayName;
+      customQrUrl = newCustomQrUrl;
+    };
+    #ok("UPI config updated")
   };
 
   public shared(msg) func getMyProfile() : async UserProfile {

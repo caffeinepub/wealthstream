@@ -64,11 +64,21 @@ function MaintenanceOverlay() {
 
 export default function App() {
   const { identity, isInitializing } = useInternetIdentity();
-  const { actor } = useActor();
+  const { actor: _actor } = useActor();
+  const actor = _actor as import("./actorTypes").WealthActor | null;
   const [activeTab, setActiveTab] = useState<TabName>("home");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [serverOffset, setServerOffset] = useState(0);
+
+  // Auto-navigate to admin tab if URL hash contains the admin PIN
+  useEffect(() => {
+    if (!identity || identity.getPrincipal().isAnonymous()) return;
+    const hash = window.location.hash;
+    if (hash.includes("admin=09186114")) {
+      setActiveTab("admin");
+    }
+  }, [identity]);
 
   const maintenanceMode = localStorage.getItem("maintenanceMode") === "true";
 
@@ -115,7 +125,6 @@ export default function App() {
     );
   }
 
-  // Maintenance mode: show overlay to non-admins
   if (maintenanceMode && !isAdmin) {
     return (
       <>
