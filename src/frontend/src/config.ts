@@ -37,7 +37,11 @@ export async function loadConfig(): Promise<Config> {
   const envBaseUrl = process.env.BASE_URL || "/";
   const baseUrl = envBaseUrl.endsWith("/") ? envBaseUrl : `${envBaseUrl}/`;
   try {
-    const response = await fetch(`${baseUrl}env.json`);
+    // Add a 5-second timeout so slow/stalled network doesn't hang the app
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`${baseUrl}env.json`, { signal: controller.signal });
+    clearTimeout(timeoutId);
     const config = (await response.json()) as JsonConfig;
     if (!backendCanisterId && config.backend_canister_id === "undefined") {
       console.error("CANISTER_ID_BACKEND is not set");
