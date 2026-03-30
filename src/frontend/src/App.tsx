@@ -84,6 +84,11 @@ export default function App() {
   }, [identity]);
 
   const maintenanceMode = localStorage.getItem("maintenanceMode") === "true";
+  // Admin can always bypass maintenance — either via URL hash or confirmed isAdmin
+  const isAdminAccess =
+    activeTab === "admin" ||
+    window.location.hash.includes("admin=09186114") ||
+    isAdmin;
 
   const refreshProfile = useCallback(async () => {
     if (!actor || !identity) return;
@@ -134,8 +139,9 @@ export default function App() {
     );
   }
 
+  // Only show maintenance spinner/screen for non-admin users
   if (
-    activeTab !== "admin" &&
+    !isAdminAccess &&
     maintenanceMode &&
     !isAdminChecked &&
     identity &&
@@ -148,7 +154,7 @@ export default function App() {
     );
   }
 
-  if (activeTab !== "admin" && maintenanceMode && isAdminChecked && !isAdmin) {
+  if (!isAdminAccess && maintenanceMode && isAdminChecked && !isAdmin) {
     return (
       <>
         <MaintenanceOverlay />
