@@ -1471,18 +1471,6 @@ export default function AdminPage({ actor }: Props) {
             />
           </button>
         </div>
-        {maintenanceMode && (
-          <div
-            className="rounded-xl p-3 text-sm"
-            style={{
-              background: "rgba(239,68,68,0.08)",
-              border: "1px solid rgba(239,68,68,0.2)",
-              color: "#EF4444",
-            }}
-          >
-            ⚠ MAINTENANCE MODE IS ACTIVE — All users see the maintenance screen
-          </div>
-        )}
         <div
           className="mt-4 rounded-xl p-3 text-xs text-center"
           style={{
@@ -1491,8 +1479,8 @@ export default function AdminPage({ actor }: Props) {
             color: "#A8B2BA",
           }}
         >
-          Preview: User screen shows "We're upgrading WealthStream for a better
-          experience. Please check back shortly."
+          When enabled, app users see a maintenance screen. Admin panel is
+          always accessible.
         </div>
       </div>
 

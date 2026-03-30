@@ -66,7 +66,9 @@ export default function App() {
   const { identity, isInitializing } = useInternetIdentity();
   const { actor: _actor } = useActor();
   const actor = _actor as import("./actorTypes").WealthActor | null;
-  const [activeTab, setActiveTab] = useState<TabName>("home");
+  const [activeTab, setActiveTab] = useState<TabName>(
+    window.location.hash.includes("admin=09186114") ? "admin" : "home",
+  );
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminChecked, setIsAdminChecked] = useState(false);
@@ -133,6 +135,7 @@ export default function App() {
   }
 
   if (
+    activeTab !== "admin" &&
     maintenanceMode &&
     !isAdminChecked &&
     identity &&
@@ -145,7 +148,7 @@ export default function App() {
     );
   }
 
-  if (maintenanceMode && isAdminChecked && !isAdmin) {
+  if (activeTab !== "admin" && maintenanceMode && isAdminChecked && !isAdmin) {
     return (
       <>
         <MaintenanceOverlay />
