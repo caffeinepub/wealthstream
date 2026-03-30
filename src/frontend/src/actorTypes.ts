@@ -30,6 +30,7 @@ export interface UserProfile {
   frozenBalance: bigint;
   isAdmin: boolean;
   isFlagged: boolean;
+  isFrozen: boolean;
   bankDetails: [] | [BankDetails];
 }
 
@@ -94,5 +95,7 @@ export interface WealthActorExtended extends backendInterface {
     displayName: string,
     customQrUrl: [] | [string],
   ): Promise<{ ok: string } | { err: string }>;
+  freezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+  unfreezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
 }
 export type WealthActor = WealthActorExtended;

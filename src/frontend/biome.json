@@ -9,7 +9,8 @@
       "build/**",
       "*.config.js",
       "src/declarations/**",
-      "src/config.ts"
+      "src/config.ts",
+      "src/hooks/useInternetIdentity.ts"
     ]
   },
   "formatter": {

@@ -1,49 +1,45 @@
-# WealthStream Admin Panel — Premium UI Redesign
+# WealthStream
 
 ## Current State
-- Admin panel is rendered via `AdminPage.tsx` inside `App.tsx`
-- The BottomNav (user app tabs: Home, Portfolio, Add Funds, History, Account, Admin) is still visible when the admin panel is active, making it look like a mobile user app
-- Admin panel UI uses mobile-style card layouts with large rounded corners, emoji icons, full-width buttons, and visual styling that matches the user app (glassmorphism, large tap targets)
-- The sidebar exists but collapses/expands with basic arrows
-- Dashboard stats use emoji icons and rounded cards that feel consumer-grade
+- Backend data (users, deposits, withdrawals, slots) is stored in non-stable Maps that are wiped on every deployment
+- `upiConfig` is a non-stable var that resets to defaults on every deployment
+- Counters (depositCounter, slotCounter, etc.) are non-stable, resetting to 0 on deployment
+- `UserRecord` and `UserProfile` have no `isFrozen` field; freeze/unfreeze is frontend-only local state
+- Backend has no `freezeUser`/`unfreezeUser` methods
+- `getMyDeposits` is missing from the Candid IDL factory, causing payment history to fail silently
+- `useInternetIdentity.ts` has `authClient` in effect deps, causing a brief double-init that can reset AdminPage `pinVerified` state
+- AdminPage `toggleFreeze` uses local Set<string> state — resets on page refresh, not synced to backend
+- UPI config in AdminPage uses `(actor as any).getUpiConfig()` unnecessarily and admin-saved changes are wiped by each deployment
 
 ## Requested Changes (Diff)
 
 ### Add
-- Full-screen enterprise admin layout: completely separate from user app shell
-- Top header bar: logo/brand on left, admin badge, refresh button, logout/back button on right
-- Proper sidebar with professional SVG-style icon text glyphs (no emoji), active indicator as left border accent
-- Professional stat cards with border-top accent color, clean typography, trend indicators
-- Proper HTML tables with thead/tbody for deposits, withdrawals, users, security forensics — replacing mobile-style card lists
-- Admin header shows section title + breadcrumb on each page
-- Subtle grid/dot background pattern to distinguish admin from user app
+- `isFrozen: Bool` field to `UserRecord` and `UserProfile` (backend + IDL + frontend types)
+- `system func preupgrade()` — serializes all runtime Maps to stable backing arrays
+- `system func postupgrade()` — deserializes stable arrays back into runtime Maps
+- Stable backing arrays for all Maps: `_usersStable`, `_depositsStable`, `_slotsStable`, `_withdrawalsStable`, `_userUniqueIdsStable`, `_userClaimAttemptsStable`
+- `stable var` counters: `depositCounter`, `slotCounter`, `withdrawalCounter`, `userCounter`
+- `stable var upiConfig` — persists across deployments
+- Backend method `freezeUser(target: Principal): async R<Text>` (admin only)
+- Backend method `unfreezeUser(target: Principal): async R<Text>` (admin only)
+- `getMyDeposits` added to IDL factory
+- `freezeUser`/`unfreezeUser` added to IDL factory, backend.d.ts, backend.ts, actorTypes.ts
 
 ### Modify
-- `App.tsx`: Hide BottomNav completely when `activeTab === 'admin'` — admin panel must be fully separate from user app navigation
-- `AdminPage.tsx`: Complete visual redesign — enterprise dark SaaS aesthetic (charcoal/slate tones, not the glassmorphism consumer dark of the user app)
-  - Sidebar: 256px fixed width, always visible on desktop. Clean list items with left-border active indicator
-  - Header: fixed top bar, 56px height, company name + "Admin Command Center" subtitle
-  - Content: scrollable main area with proper page headers (title + description + action button)
-  - Stat cards: flat design, accent border on top, large number, label, subtle trend text — no emoji
-  - Data tables: alternating row shading, status badges with dot indicators, action buttons inline
-  - PIN screen: centered card with professional form design, no emoji background
-  - Buttons: rectangular with subtle radius (8px), not large mobile rounded (16-20px)
-  - Typography: smaller, denser — professional admin density, not mobile-first sizing
+- `getOrCreateRecord` — initialize new users with `isFrozen = false`
+- `toProfile` — include `isFrozen` from UserRecord
+- `claimReward` and `requestWithdrawal` — check `isFrozen` before allowing operation
+- `useInternetIdentity.ts` — remove `authClient` from useEffect dependency array to prevent double-init loop
+- `AdminPage.tsx` toggleFreeze — replace local Set state with actual `actor.freezeUser`/`actor.unfreezeUser` calls; read `isFrozen` from UserProfile returned by backend
+- `AdminPage.tsx` UPI section — use typed `actor.getUpiConfig()` instead of `(actor as any)`, add retry/reload button
 
 ### Remove
-- BottomNav visibility in admin panel view (App.tsx change)
-- All emoji used as primary UI icons in admin panel (replace with text glyphs or unicode symbols used sparingly)
-- Mobile-style full-width large rounded buttons on every row
-- Glassmorphism cards that look like the user app
-- `sidebarCollapsed` mobile-collapse button (keep sidebar always open on admin)
+- Local `frozenUsers: Set<string>` state in AdminPage — replaced by backend isFrozen field
 
 ## Implementation Plan
-1. Edit `App.tsx`: Wrap BottomNav in a conditional — only render when `activeTab !== 'admin'`
-2. Redesign `AdminPage.tsx` PIN screen: Clean centered card, professional form
-3. Redesign sidebar: Fixed 256px, slate-900 background, left-border active indicator, clean nav items
-4. Redesign top header bar: Fixed 56px bar spanning full width, above content
-5. Redesign Dashboard tab: Stat cards with top accent border, recent transactions as a proper table
-6. Redesign User Directory: HTML table layout, inline expand for user details
-7. Redesign Payment Approvals & Withdrawal Queue: Table with status dots, action buttons in last column
-8. Redesign Security Alerts: Clean table-based forensics layout
-9. Redesign System Settings: Standard form layout with field groups and section dividers
+1. Rewrite `src/backend/main.mo` with stable storage hooks, isFrozen field, freezeUser/unfreezeUser methods
+2. Update `src/frontend/src/declarations/backend.did.js` with new IDL entries
+3. Update `src/frontend/src/backend.d.ts` and `src/frontend/src/backend.ts` with new method signatures
+4. Update `src/frontend/src/actorTypes.ts` to include isFrozen and new methods
+5. Fix `src/frontend/src/hooks/useInternetIdentity.ts` auth loop
+6. Update `src/frontend/src/components/AdminPage.tsx` with real backend freeze/unfreeze and fixed UPI config

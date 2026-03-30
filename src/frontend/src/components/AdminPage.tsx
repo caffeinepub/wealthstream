@@ -326,8 +326,6 @@ export default function AdminPage({ actor, onExit }: Props) {
   const [freezeSchedule, setFreezeSchedule] = useState<Record<string, string>>(
     {},
   );
-  const [frozenUsers, setFrozenUsers] = useState<Set<string>>(new Set());
-
   const [upiForm, setUpiForm] = useState({
     upiId: "",
     accountName: "",
@@ -361,13 +359,15 @@ export default function AdminPage({ actor, onExit }: Props) {
   const loadUpiConfig = useCallback(async () => {
     if (!actor) return;
     try {
-      const cfg = await (actor as any).getUpiConfig();
+      const cfg = await actor.getUpiConfig();
       setUpiForm({
         upiId: cfg.upiId,
         accountName: cfg.accountName,
         displayName: cfg.displayName,
         customQrUrl:
-          cfg.customQrUrl.length > 0 ? String(cfg.customQrUrl[0]) : "",
+          Array.isArray(cfg.customQrUrl) && cfg.customQrUrl.length > 0
+            ? String(cfg.customQrUrl[0])
+            : "",
       });
       setUpiLoaded(true);
     } catch {
@@ -460,18 +460,22 @@ export default function AdminPage({ actor, onExit }: Props) {
     } else toast.error(r.err);
   };
 
-  const toggleFreeze = (uid: string) => {
-    setFrozenUsers((prev) => {
-      const next = new Set(prev);
-      if (next.has(uid)) {
-        next.delete(uid);
+  const toggleFreeze = async (u: UserProfile) => {
+    if (!actor) return;
+    const p = Principal.fromText(u.userId.toString());
+    if (u.isFrozen) {
+      const r = await actor.unfreezeUser(p);
+      if ("ok" in r) {
         toast.success("User unfrozen");
-      } else {
-        next.add(uid);
+        void load();
+      } else toast.error(r.err);
+    } else {
+      const r = await actor.freezeUser(p);
+      if ("ok" in r) {
         toast.success("User frozen");
-      }
-      return next;
-    });
+        void load();
+      } else toast.error(r.err);
+    }
   };
 
   // ─── Derived state ──────────────────────────────────────────────────────────
@@ -1170,7 +1174,7 @@ export default function AdminPage({ actor, onExit }: Props) {
               {filteredUsers.map((u, idx) => {
                 const uid = u.userId.toString();
                 const isExpanded = expandedUser === uid;
-                const isFrozen = frozenUsers.has(uid);
+                const isFrozen = u.isFrozen;
                 const ev = editValues[uid] || {
                   deposited: "",
                   withdrawable: "",
@@ -1310,7 +1314,7 @@ export default function AdminPage({ actor, onExit }: Props) {
                           }}
                         >
                           <ActionBtn
-                            onClick={() => toggleFreeze(uid)}
+                            onClick={() => void toggleFreeze(u)}
                             color={isFrozen ? C.blue : C.muted}
                             bg={isFrozen ? C.blueBg : "rgba(255,255,255,0.04)"}
                             border={
@@ -2499,11 +2503,13 @@ export default function AdminPage({ actor, onExit }: Props) {
                       if (!actor) return;
                       setUpiLoading(true);
                       try {
-                        const res = await (actor as any).setUpiConfig(
+                        const res = await actor.setUpiConfig(
                           upiForm.upiId,
                           upiForm.accountName,
                           upiForm.displayName,
-                          upiForm.customQrUrl ? [upiForm.customQrUrl] : [],
+                          upiForm.customQrUrl.trim() === ""
+                            ? []
+                            : [upiForm.customQrUrl.trim()],
                         );
                         if ("ok" in res)
                           toast.success("UPI configuration saved");
@@ -2540,6 +2546,24 @@ export default function AdminPage({ actor, onExit }: Props) {
                   >
                     Changes reflect immediately for new payments.
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => void loadUpiConfig()}
+                    data-ocid="admin.upi_reload_button"
+                    style={{
+                      marginTop: 10,
+                      padding: "7px 16px",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: "rgba(255,255,255,0.04)",
+                      color: C.muted,
+                      border: `1px solid ${C.border}`,
+                      cursor: "pointer",
+                    }}
+                  >
+                    &#8635; Reload UPI Config
+                  </button>
                 </div>
               </div>
             </>

@@ -29,7 +29,9 @@ actor class WealthStream() = this {
     lastUpdateMonth: Nat;
   };
 
-  // Stored type — no uniqueId (backward-compatible with existing stable data)
+  // IMPORTANT: UserRecord is kept UNCHANGED from previous version.
+  // mo:core/Map is implicitly stable, so changing this type breaks upgrade.
+  // isFrozen is tracked separately in frozenSet below.
   public type UserRecord = {
     userId: Principal;
     depositedBalance: Nat;
@@ -40,7 +42,7 @@ actor class WealthStream() = this {
     bankDetails: ?BankDetails;
   };
 
-  // Full type returned to clients — includes uniqueId
+  // UserProfile returned to clients includes isFrozen (computed from frozenSet)
   public type UserProfile = {
     userId: Principal;
     uniqueId: Text;
@@ -49,6 +51,7 @@ actor class WealthStream() = this {
     frozenBalance: Nat;
     isAdmin: Bool;
     isFlagged: Bool;
+    isFrozen: Bool;
     bankDetails: ?BankDetails;
   };
 
@@ -103,25 +106,45 @@ actor class WealthStream() = this {
 
   let accessControlState = AccessControl.initState();
 
-  // Existing stable map — type unchanged, no migration error
+  // ─── Runtime maps (mo:core/Map is implicitly stable — data survives upgrades) ───
   var users = Map.empty<Principal, UserRecord>();
-  // Separate stable map for unique IDs — new, starts empty on upgrade (ok)
   var userUniqueIds = Map.empty<Principal, Text>();
   var userClaimAttempts = Map.empty<Principal, [Int]>();
   var deposits = Map.empty<Nat, DepositRequest>();
   var slots = Map.empty<Nat, InvestmentSlot>();
   var withdrawals = Map.empty<Nat, WithdrawalRequest>();
 
-  var depositCounter : Nat = 0;
-  var slotCounter : Nat = 0;
-  var withdrawalCounter : Nat = 0;
-  var userCounter : Nat = 0;
+  // NEW: freeze tracking as a separate map so UserRecord stays backward compatible.
+  // Bool value: true = frozen, false = explicitly unfrozen.
+  // Absence from map = never frozen.
+  var frozenSet = Map.empty<Principal, Bool>();
 
-  var upiConfig : UpiConfig = {
+  // ─── Counters: now stable (were non-stable before) ─────────────────────────
+  // One-time reset on this upgrade is acceptable; migration in postupgrade fixes IDs.
+  stable var depositCounter : Nat = 0;
+  stable var slotCounter : Nat = 0;
+  stable var withdrawalCounter : Nat = 0;
+  stable var userCounter : Nat = 0;
+
+  // ─── UPI config: now stable so admin changes survive deployments ───────────
+  stable var upiConfig : UpiConfig = {
     upiId = "turbohacker4-2@okaxis";
     accountName = "Iqlas Dar";
     displayName = "WealthStream";
     customQrUrl = null;
+  };
+
+  // ─── Upgrade migration: set counters from existing map data to prevent ID collisions ─
+  system func postupgrade() {
+    for ((k, _) in deposits.entries()) {
+      if (k > depositCounter) depositCounter := k;
+    };
+    for ((k, _) in slots.entries()) {
+      if (k > slotCounter) slotCounter := k;
+    };
+    for ((k, _) in withdrawals.entries()) {
+      if (k > withdrawalCounter) withdrawalCounter := k;
+    };
   };
 
   let VALID_AMOUNTS : [Nat] = [100, 200, 300, 400, 500, 600, 700, 800, 1000, 3200];
@@ -160,6 +183,13 @@ actor class WealthStream() = this {
     }
   };
 
+  func isUserFrozen(p : Principal) : Bool {
+    switch (frozenSet.get(p)) {
+      case (?true) true;
+      case _ false;
+    }
+  };
+
   func toProfile(rec : UserRecord) : UserProfile {
     {
       userId = rec.userId;
@@ -169,6 +199,7 @@ actor class WealthStream() = this {
       frozenBalance = rec.frozenBalance;
       isAdmin = rec.isAdmin;
       isFlagged = rec.isFlagged;
+      isFrozen = isUserFrozen(rec.userId);
       bankDetails = rec.bankDetails;
     }
   };
@@ -350,7 +381,8 @@ actor class WealthStream() = this {
     if (not termsAccepted) return #err("Must accept terms and conditions");
     if (not isValidAmount(amount)) return #err("Invalid investment amount");
     let caller = msg.caller;
-    ignore getOrCreateRecord(caller);
+    let user = getOrCreateRecord(caller);
+    if (isUserFrozen(caller)) return #err("Account is frozen. Contact support.");
     depositCounter += 1;
     let req : DepositRequest = {
       id = depositCounter;
@@ -360,7 +392,6 @@ actor class WealthStream() = this {
       createdAt = Time.now();
     };
     deposits.add(depositCounter, req);
-    let user = getOrCreateRecord(caller);
     users.add(caller, { user with frozenBalance = user.frozenBalance + amount });
     #ok(depositCounter)
   };
@@ -372,6 +403,7 @@ actor class WealthStream() = this {
       case null return #err("User not found");
     };
     if (user.isFlagged) return #err("Account flagged. Contact support.");
+    if (isUserFrozen(caller)) return #err("Account is frozen. Contact support.");
     var slot = switch (slots.get(slotId)) {
       case (?s) s;
       case null return #err("Slot not found");
@@ -420,6 +452,7 @@ actor class WealthStream() = this {
       case (?u) u; case null return #err("User not found");
     };
     if (user.isFlagged) return #err("Account is flagged. Contact support.");
+    if (isUserFrozen(caller)) return #err("Account is frozen. Contact support.");
     if (amount < MIN_WITHDRAWAL) return #err("Minimum withdrawal is 200");
     if (user.withdrawableBalance < amount) return #err("Insufficient withdrawable balance");
     withdrawalCounter += 1;
@@ -568,6 +601,22 @@ actor class WealthStream() = this {
     }
   };
 
+  // Freeze a user — blocks deposits, claims, and withdrawals
+  public shared(msg) func freezeUser(target : Principal) : async R<Text> {
+    if (not isAdminCaller(msg.caller)) return #err("Not authorized");
+    switch (users.get(target)) {
+      case null return #err("User not found");
+      case (?_) { frozenSet.add(target, true); #ok("User frozen") };
+    }
+  };
+
+  // Unfreeze a user — restores normal access
+  public shared(msg) func unfreezeUser(target : Principal) : async R<Text> {
+    if (not isAdminCaller(msg.caller)) return #err("Not authorized");
+    frozenSet.add(target, false);
+    #ok("User unfrozen")
+  };
+
   public shared(msg) func completeWithdrawal(withdrawalId : Nat) : async R<Text> {
     if (not isAdminCaller(msg.caller)) return #err("Not authorized");
     switch (withdrawals.get(withdrawalId)) {
@@ -614,8 +663,6 @@ actor class WealthStream() = this {
   let ADMIN_PIN : Text = "09186114";
 
   // Grant admin rights to caller using the admin PIN.
-  // This is called from the frontend after PIN verification to ensure
-  // the admin's Internet Identity principal gets backend admin rights.
   public shared(msg) func claimAdminWithPin(pin : Text) : async R<Text> {
     if (pin != ADMIN_PIN) return #err("Invalid PIN");
     accessControlState.userRoles.add(msg.caller, #admin);

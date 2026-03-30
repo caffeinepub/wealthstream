@@ -56,6 +56,7 @@ export interface backendInterface {
     lookupIFSC(ifsc: string): Promise<{ ok: any } | { err: string }>;
     getMySlots(): Promise<any[]>;
     getMyWithdrawals(): Promise<any[]>;
+    getMyDeposits(): Promise<any[]>;
     getBankDetails(): Promise<[] | [any]>;
     getPendingDeposits(): Promise<{ ok: any[] } | { err: string }>;
     getAllDeposits(): Promise<{ ok: any[] } | { err: string }>;
@@ -63,12 +64,13 @@ export interface backendInterface {
     rejectDeposit(depositId: bigint): Promise<{ ok: string } | { err: string }>;
     getFlaggedUsers(): Promise<{ ok: any[] } | { err: string }>;
     unflagUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    freezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    unfreezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
     completeWithdrawal(withdrawalId: bigint): Promise<{ ok: string } | { err: string }>;
     rejectWithdrawal(withdrawalId: bigint): Promise<{ ok: string } | { err: string }>;
     addFunds(target: Principal, amount: bigint): Promise<{ ok: string } | { err: string }>;
     getAllWithdrawals(): Promise<{ ok: any[] } | { err: string }>;
     getAllUsers(): Promise<{ ok: any[] } | { err: string }>;
-    getMyDeposits(): Promise<any[]>;
     _initializeAccessControlWithSecret(secret: string): Promise<void>;
     getCallerUserRole(): Promise<any>;
     isCallerAdmin(): Promise<boolean>;
@@ -105,6 +107,7 @@ export class Backend implements backendInterface {
     lookupIFSC(ifsc: string) { return this.call(() => this.actor.lookupIFSC(ifsc)); }
     getMySlots() { return this.call(() => this.actor.getMySlots()); }
     getMyWithdrawals() { return this.call(() => this.actor.getMyWithdrawals()); }
+    getMyDeposits() { return this.call(() => this.actor.getMyDeposits()); }
     getBankDetails() { return this.call(() => this.actor.getBankDetails()); }
     getPendingDeposits() { return this.call(() => this.actor.getPendingDeposits()); }
     getAllDeposits() { return this.call(() => this.actor.getAllDeposits()); }
@@ -112,12 +115,13 @@ export class Backend implements backendInterface {
     rejectDeposit(depositId: bigint) { return this.call(() => this.actor.rejectDeposit(depositId)); }
     getFlaggedUsers() { return this.call(() => this.actor.getFlaggedUsers()); }
     unflagUser(target: Principal) { return this.call(() => this.actor.unflagUser(target)); }
+    freezeUser(target: Principal) { return this.call(() => this.actor.freezeUser(target)); }
+    unfreezeUser(target: Principal) { return this.call(() => this.actor.unfreezeUser(target)); }
     completeWithdrawal(withdrawalId: bigint) { return this.call(() => this.actor.completeWithdrawal(withdrawalId)); }
     rejectWithdrawal(withdrawalId: bigint) { return this.call(() => this.actor.rejectWithdrawal(withdrawalId)); }
     addFunds(target: Principal, amount: bigint) { return this.call(() => this.actor.addFunds(target, amount)); }
     getAllWithdrawals() { return this.call(() => this.actor.getAllWithdrawals()); }
     getAllUsers() { return this.call(() => this.actor.getAllUsers()); }
-    getMyDeposits(): Promise<any[]> { return this.call(() => (this.actor as any).getMyDeposits()); }
     _initializeAccessControlWithSecret(secret: string) {
         return this.call(() => this.actor._initializeAccessControlWithSecret(secret));
     }

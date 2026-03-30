@@ -32,6 +32,7 @@ declare module "./backend" {
     lookupIFSC(ifsc: string): Promise<{ ok: IFSCResult } | { err: string }>;
     getMySlots(): Promise<InvestmentSlot[]>;
     getMyWithdrawals(): Promise<WithdrawalRequest[]>;
+    getMyDeposits(): Promise<DepositRequest[]>;
     getBankDetails(): Promise<[] | [BankDetails]>;
     getPendingDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
     approveDeposit(
@@ -40,6 +41,8 @@ declare module "./backend" {
     rejectDeposit(depositId: bigint): Promise<{ ok: string } | { err: string }>;
     getFlaggedUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;
     unflagUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    freezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    unfreezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
     completeWithdrawal(
       withdrawalId: bigint,
     ): Promise<{ ok: string } | { err: string }>;
@@ -80,6 +83,7 @@ declare module "./backend" {
     lookupIFSC(ifsc: string): Promise<{ ok: IFSCResult } | { err: string }>;
     getMySlots(): Promise<InvestmentSlot[]>;
     getMyWithdrawals(): Promise<WithdrawalRequest[]>;
+    getMyDeposits(): Promise<DepositRequest[]>;
     getBankDetails(): Promise<[] | [BankDetails]>;
     getPendingDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
     approveDeposit(
@@ -88,6 +92,8 @@ declare module "./backend" {
     rejectDeposit(depositId: bigint): Promise<{ ok: string } | { err: string }>;
     getFlaggedUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;
     unflagUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    freezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    unfreezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
     completeWithdrawal(
       withdrawalId: bigint,
     ): Promise<{ ok: string } | { err: string }>;

@@ -32,6 +32,7 @@ export interface UserProfile {
     frozenBalance: bigint;
     isAdmin: boolean;
     isFlagged: boolean;
+    isFrozen: boolean;
     bankDetails: [] | [BankDetails];
 }
 
@@ -97,11 +98,15 @@ export interface backendInterface {
     rejectDeposit(depositId: bigint): Promise<{ ok: string } | { err: string }>;
     getFlaggedUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;
     unflagUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    freezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
+    unfreezeUser(target: Principal): Promise<{ ok: string } | { err: string }>;
     completeWithdrawal(withdrawalId: bigint): Promise<{ ok: string } | { err: string }>;
     rejectWithdrawal(withdrawalId: bigint): Promise<{ ok: string } | { err: string }>;
     addFunds(target: Principal, amount: bigint): Promise<{ ok: string } | { err: string }>;
     getAllWithdrawals(): Promise<{ ok: WithdrawalRequest[] } | { err: string }>;
     getAllUsers(): Promise<{ ok: UserProfile[] } | { err: string }>;
+    getUpiConfig(): Promise<{ upiId: string; accountName: string; displayName: string; customQrUrl: [] | [string] }>;
+    setUpiConfig(upiId: string, accountName: string, displayName: string, customQrUrl: [] | [string]): Promise<{ ok: string } | { err: string }>;
     _initializeAccessControlWithSecret(secret: string): Promise<void>;
     getCallerUserRole(): Promise<UserRole>;
     isCallerAdmin(): Promise<boolean>;

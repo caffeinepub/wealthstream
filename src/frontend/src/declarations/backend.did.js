@@ -41,6 +41,7 @@ const UserProfile = IDL.Record({
   frozenBalance: IDL.Nat,
   isAdmin: IDL.Bool,
   isFlagged: IDL.Bool,
+  isFrozen: IDL.Bool,
   bankDetails: IDL.Opt(BankDetails),
 });
 
@@ -118,6 +119,7 @@ const serviceDefinition = {
   lookupIFSC: IDL.Func([IDL.Text], [R_IFSC], []),
   getMySlots: IDL.Func([], [IDL.Vec(InvestmentSlot)], []),
   getMyWithdrawals: IDL.Func([], [IDL.Vec(WithdrawalRequest)], []),
+  getMyDeposits: IDL.Func([], [IDL.Vec(DepositRequest)], []),
   getBankDetails: IDL.Func([], [IDL.Opt(BankDetails)], []),
   getPendingDeposits: IDL.Func([], [R_Deposits], []),
   getAllDeposits: IDL.Func([], [R_Deposits], []),
@@ -125,6 +127,8 @@ const serviceDefinition = {
   rejectDeposit: IDL.Func([IDL.Nat], [R_Text], []),
   getFlaggedUsers: IDL.Func([], [R_Users], []),
   unflagUser: IDL.Func([IDL.Principal], [R_Text], []),
+  freezeUser: IDL.Func([IDL.Principal], [R_Text], []),
+  unfreezeUser: IDL.Func([IDL.Principal], [R_Text], []),
   completeWithdrawal: IDL.Func([IDL.Nat], [R_Text], []),
   rejectWithdrawal: IDL.Func([IDL.Nat], [R_Text], []),
   addFunds: IDL.Func([IDL.Principal, IDL.Nat], [R_Text], []),
@@ -174,6 +178,7 @@ export const idlFactory = ({ IDL }) => {
     frozenBalance: IDL.Nat,
     isAdmin: IDL.Bool,
     isFlagged: IDL.Bool,
+    isFrozen: IDL.Bool,
     bankDetails: IDL.Opt(BankDetails),
   });
   const DepositRequest = IDL.Record({
@@ -242,6 +247,7 @@ export const idlFactory = ({ IDL }) => {
     lookupIFSC: IDL.Func([IDL.Text], [R_IFSC], []),
     getMySlots: IDL.Func([], [IDL.Vec(InvestmentSlot)], []),
     getMyWithdrawals: IDL.Func([], [IDL.Vec(WithdrawalRequest)], []),
+    getMyDeposits: IDL.Func([], [IDL.Vec(DepositRequest)], []),
     getBankDetails: IDL.Func([], [IDL.Opt(BankDetails)], []),
     getPendingDeposits: IDL.Func([], [R_Deposits], []),
     getAllDeposits: IDL.Func([], [R_Deposits], []),
@@ -249,6 +255,8 @@ export const idlFactory = ({ IDL }) => {
     rejectDeposit: IDL.Func([IDL.Nat], [R_Text], []),
     getFlaggedUsers: IDL.Func([], [R_Users], []),
     unflagUser: IDL.Func([IDL.Principal], [R_Text], []),
+    freezeUser: IDL.Func([IDL.Principal], [R_Text], []),
+    unfreezeUser: IDL.Func([IDL.Principal], [R_Text], []),
     completeWithdrawal: IDL.Func([IDL.Nat], [R_Text], []),
     rejectWithdrawal: IDL.Func([IDL.Nat], [R_Text], []),
     addFunds: IDL.Func([IDL.Principal, IDL.Nat], [R_Text], []),
@@ -257,7 +265,7 @@ export const idlFactory = ({ IDL }) => {
     _initializeAccessControlWithSecret: IDL.Func([IDL.Text], [], []),
     getCallerUserRole: IDL.Func([], [UserRole], []),
     isCallerAdmin: IDL.Func([], [IDL.Bool], []),
-  claimAdminWithPin: IDL.Func([IDL.Text], [IDL.Variant({'ok': IDL.Text, 'err': IDL.Text})], []),
+    claimAdminWithPin: IDL.Func([IDL.Text], [IDL.Variant({'ok': IDL.Text, 'err': IDL.Text})], []),
   });
 };
 
