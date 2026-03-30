@@ -1,4 +1,5 @@
 import { Principal } from "@icp-sdk/core/principal";
+import type { CSSProperties, ReactElement } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type {
@@ -18,52 +19,67 @@ type AdminTab =
 
 interface Props {
   actor: WealthActor | null;
+  onExit?: () => void;
 }
 
+// ─── Design tokens ──────────────────────────────────────────────────────────
+const C = {
+  bgMain: "#0a0e17",
+  bgSidebar: "#0d1220",
+  bgCard: "#111827",
+  bgHeader: "#0d1220",
+  bgInput: "#1e293b",
+  bgRow: "rgba(255,255,255,0.015)",
+  border: "rgba(255,255,255,0.08)",
+  borderSub: "rgba(255,255,255,0.04)",
+  amber: "#f0b429",
+  amberBg: "rgba(240,180,41,0.08)",
+  amberBorder: "rgba(240,180,41,0.2)",
+  emerald: "#10b981",
+  emeraldBg: "rgba(16,185,129,0.08)",
+  emeraldBorder: "rgba(16,185,129,0.2)",
+  danger: "#ef4444",
+  dangerBg: "rgba(239,68,68,0.08)",
+  dangerBorder: "rgba(239,68,68,0.2)",
+  warning: "#f59e0b",
+  warningBg: "rgba(245,158,11,0.08)",
+  warningBorder: "rgba(245,158,11,0.2)",
+  blue: "#3b82f6",
+  blueBg: "rgba(59,130,246,0.08)",
+  text: "#f1f5f9",
+  muted: "#64748b",
+  dim: "rgba(255,255,255,0.22)",
+} as const;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 function shortId(p: { toString(): string }) {
   const s = p.toString();
-  return `${s.slice(0, 8)}...${s.slice(-4)}`;
+  return `${s.slice(0, 8)}\u2026${s.slice(-4)}`;
 }
 
 function fmt(n: bigint | number) {
-  return `₹${Number(n).toLocaleString("en-IN")}`;
+  return `\u20b9${Number(n).toLocaleString("en-IN")}`;
 }
 
-function getDeviceData(userId: string) {
-  const hash = userId.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  const models = [
-    "Samsung Galaxy A54",
-    "Redmi Note 12",
-    "iPhone 13",
-    "OnePlus Nord",
-  ];
-  const cities = [
-    "Mumbai, Maharashtra",
-    "Delhi, NCR",
-    "Bengaluru, Karnataka",
-    "Hyderabad, TS",
-  ];
-  const os = hash % 3 === 0 ? "iOS 16.5" : `Android ${12 + (hash % 3)}`;
-  const rooted = hash % 7 === 0;
-  const n1 = (hash % 20) + 1;
-  const n2 = (hash % 50) + 100;
-  return {
-    imei: `35${userId
-      .slice(2, 12)
-      .replace(/[^0-9]/g, "0")
-      .padEnd(13, "0")}`,
-    model: models[hash % models.length],
-    os,
-    rooted,
-    ip: `192.168.${n1}.${n2}`,
-    location: cities[hash % cities.length],
-    permissions: {
-      camera: hash % 2 === 0,
-      storage: true,
-      microphone: hash % 3 !== 0,
-      location: hash % 4 !== 0,
-    },
-  };
+function fmtDate(ns: bigint) {
+  return new Date(Number(ns) / 1e6).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function depStatusInfo(d: DepositRequest): { label: string; color: string } {
+  if ("Approved" in d.status) return { label: "Approved", color: C.emerald };
+  if ("Rejected" in d.status) return { label: "Rejected", color: C.danger };
+  return { label: "Pending", color: C.warning };
+}
+
+function wdStatusInfo(w: WithdrawalRequest): { label: string; color: string } {
+  if ("Completed" in w.status) return { label: "Completed", color: C.emerald };
+  if ("Rejected" in w.status) return { label: "Rejected", color: C.danger };
+  return { label: "Pending", color: C.warning };
 }
 
 const ACTIVITY_EVENTS = [
@@ -81,13 +97,215 @@ function getSimulatedActivity(userId: string) {
   return Array.from({ length: 5 }, (_, i) => ({
     id: i,
     action: ACTIVITY_EVENTS[(hash + i) % ACTIVITY_EVENTS.length],
-    time: new Date(
-      Date.now() - (i + 1) * 1000 * 60 * (3 + i),
-    ).toLocaleTimeString("en-IN"),
+    time: new Date(Date.now() - (i + 1) * 60_000 * (3 + i)).toLocaleTimeString(
+      "en-IN",
+    ),
   }));
 }
 
-export default function AdminPage({ actor }: Props) {
+function getDeviceData(userId: string) {
+  const hash = userId.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const models = [
+    "Samsung Galaxy A54",
+    "Redmi Note 12",
+    "iPhone 13",
+    "OnePlus Nord",
+  ];
+  const cities = [
+    "Mumbai, Maharashtra",
+    "Delhi, NCR",
+    "Bengaluru, Karnataka",
+    "Hyderabad, TS",
+  ];
+  return {
+    imei: `35${userId
+      .slice(2, 12)
+      .replace(/[^0-9]/g, "0")
+      .padEnd(13, "0")}`,
+    model: models[hash % models.length],
+    os: hash % 3 === 0 ? "iOS 16.5" : `Android ${12 + (hash % 3)}`,
+    rooted: hash % 7 === 0,
+    ip: `192.168.${(hash % 20) + 1}.${(hash % 50) + 100}`,
+    location: cities[hash % cities.length],
+    permissions: {
+      camera: hash % 2 === 0,
+      storage: true,
+      microphone: hash % 3 !== 0,
+      location: hash % 4 !== 0,
+    },
+  };
+}
+
+// ─── Shared table styles ────────────────────────────────────────────────────
+const TH_STYLE: CSSProperties = {
+  padding: "9px 16px",
+  textAlign: "left",
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: "0.07em",
+  color: C.muted,
+  textTransform: "uppercase",
+  borderBottom: `1px solid ${C.border}`,
+  whiteSpace: "nowrap",
+  background: "rgba(13,18,32,0.6)",
+};
+
+const TD_STYLE: CSSProperties = {
+  padding: "10px 16px",
+  fontSize: 13,
+  color: C.text,
+  borderBottom: `1px solid ${C.borderSub}`,
+  verticalAlign: "middle",
+};
+
+const TD_MONO: CSSProperties = {
+  ...TD_STYLE,
+  fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+  fontSize: 11,
+  color: C.muted,
+};
+
+// ─── Status dot ────────────────────────────────────────────────────────────
+function StatusDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: color,
+          flexShrink: 0,
+          display: "inline-block",
+        }}
+      />
+      <span style={{ fontSize: 12, color, fontWeight: 500 }}>{label}</span>
+    </span>
+  );
+}
+
+// ─── Small action button ────────────────────────────────────────────────────
+function ActionBtn({
+  onClick,
+  color,
+  bg,
+  border,
+  children,
+  ocid,
+  disabled,
+}: {
+  onClick: () => void;
+  color: string;
+  bg: string;
+  border: string;
+  children: string;
+  ocid?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      data-ocid={ocid}
+      style={{
+        padding: "4px 12px",
+        borderRadius: 4,
+        fontSize: 12,
+        fontWeight: 600,
+        background: bg,
+        color,
+        border: `1px solid ${border}`,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+        whiteSpace: "nowrap" as const,
+        lineHeight: "1.5",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─── Section panel wrapper ──────────────────────────────────────────────────
+function Panel({
+  title,
+  badge,
+  badgeColor,
+  children,
+  topBorderColor,
+}: {
+  title?: string;
+  badge?: string | number;
+  badgeColor?: string;
+  children: React.ReactNode;
+  topBorderColor?: string;
+}) {
+  return (
+    <div
+      style={{
+        background: C.bgCard,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        overflow: "hidden",
+        borderTop: topBorderColor
+          ? `3px solid ${topBorderColor}`
+          : `1px solid ${C.border}`,
+      }}
+    >
+      {title && (
+        <div
+          style={{
+            padding: "13px 16px",
+            borderBottom: `1px solid ${C.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: C.text,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {title}
+          </span>
+          {badge !== undefined && (
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "2px 8px",
+                borderRadius: 99,
+                background: badgeColor ? `${badgeColor}20` : C.amberBg,
+                color: badgeColor ?? C.amber,
+                border: `1px solid ${
+                  badgeColor ? `${badgeColor}30` : C.amberBorder
+                }`,
+              }}
+            >
+              {badge}
+            </span>
+          )}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
+export default function AdminPage({ actor, onExit }: Props) {
   const [tab, setTab] = useState<AdminTab>("dashboard");
   const ADMIN_PIN = "09186114";
   const [pinVerified, setPinVerified] = useState(false);
@@ -100,7 +318,6 @@ export default function AdminPage({ actor }: Props) {
   const [flagged, setFlagged] = useState<UserProfile[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<
@@ -131,23 +348,15 @@ export default function AdminPage({ actor }: Props) {
         actor.getAllUsers(),
       ]);
       if ("ok" in d) setDeposits(d.ok);
-      else console.error("getAllDeposits error:", "err" in d ? d.err : d);
       if ("ok" in w) setWithdrawals(w.ok);
-      else console.error("getAllWithdrawals error:", "err" in w ? w.err : w);
       if ("ok" in f) setFlagged(f.ok);
-      else console.error("getFlaggedUsers error:", "err" in f ? f.err : f);
       if ("ok" in u) setUsers(u.ok);
-      else console.error("getAllUsers error:", "err" in u ? u.err : u);
     } catch (e) {
-      console.error(e);
+      console.error("Admin load error:", e);
     } finally {
       setLoading(false);
     }
   }, [actor]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const loadUpiConfig = useCallback(async () => {
     if (!actor) return;
@@ -177,11 +386,12 @@ export default function AdminPage({ actor }: Props) {
     return () => clearInterval(id);
   }, [pinVerified, actor, load]);
 
+  // ─── Action handlers ───────────────────────────────────────────────────────
   const approveDeposit = async (id: bigint) => {
     if (!actor) return;
     const r = await actor.approveDeposit(id);
     if ("ok" in r) {
-      toast.success("Approved");
+      toast.success("Deposit approved");
       void load();
     } else toast.error(r.err);
   };
@@ -190,7 +400,7 @@ export default function AdminPage({ actor }: Props) {
     if (!actor) return;
     const r = await actor.rejectDeposit(id);
     if ("ok" in r) {
-      toast.success("Rejected");
+      toast.success("Deposit rejected");
       void load();
     } else toast.error(r.err);
   };
@@ -199,7 +409,7 @@ export default function AdminPage({ actor }: Props) {
     if (!actor) return;
     const r = await actor.completeWithdrawal(id);
     if ("ok" in r) {
-      toast.success("Completed");
+      toast.success("Withdrawal completed");
       void load();
     } else toast.error(r.err);
   };
@@ -218,7 +428,7 @@ export default function AdminPage({ actor }: Props) {
     const p = Principal.fromText(userId.toString());
     const r = await actor.unflagUser(p);
     if ("ok" in r) {
-      toast.success("Unflagged");
+      toast.success("User unflagged");
       void load();
     } else toast.error(r.err);
   };
@@ -264,6 +474,7 @@ export default function AdminPage({ actor }: Props) {
     });
   };
 
+  // ─── Derived state ──────────────────────────────────────────────────────────
   const pendingDeposits = deposits.filter((d) => "Pending" in d.status);
   const pendingWithdrawals = withdrawals.filter((w) => "Pending" in w.status);
   const filteredUsers = users.filter((u) => {
@@ -271,7 +482,7 @@ export default function AdminPage({ actor }: Props) {
     if (!q) return true;
     return (
       u.userId.toString().toLowerCase().includes(q) ||
-      u.uniqueId?.toLowerCase().includes(q)
+      (u.uniqueId ?? "").toLowerCase().includes(q)
     );
   });
 
@@ -286,1312 +497,2086 @@ export default function AdminPage({ actor }: Props) {
     icon: string;
     badge?: number;
   }[] = [
-    { id: "dashboard", label: "Dashboard", icon: "⊞" },
-    { id: "users", label: "User Directory", icon: "👥" },
+    { id: "dashboard", label: "Dashboard", icon: "\u25a3" },
+    { id: "users", label: "User Directory", icon: "\u25ce" },
     {
       id: "deposits",
       label: "Payment Approvals",
-      icon: "🧾",
-      badge: pendingDeposits.length,
+      icon: "\u2193",
+      badge: pendingDeposits.length || undefined,
     },
     {
       id: "withdrawals",
       label: "Withdrawal Queue",
-      icon: "↓○",
-      badge: pendingWithdrawals.length,
+      icon: "\u2191",
+      badge: pendingWithdrawals.length || undefined,
     },
     {
       id: "security",
       label: "Security Alerts",
-      icon: "🛡",
+      icon: "\u229f",
       badge: flagged.length || undefined,
     },
-    { id: "settings", label: "System Settings", icon: "⚙" },
+    { id: "settings", label: "System Settings", icon: "\u2699" },
   ];
 
-  // --- Sidebar ---
-  const Sidebar = () => (
-    <div
-      className="flex flex-col h-full"
-      style={{
-        width: sidebarCollapsed ? 60 : 240,
-        background: "#0D1420",
-        borderRight: "1px solid rgba(255,255,255,0.07)",
-        transition: "width 0.2s ease",
-        flexShrink: 0,
-      }}
-    >
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PIN SCREEN
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (!pinVerified) {
+    const handlePinSubmit = async () => {
+      if (pinInput === ADMIN_PIN) {
+        if (actor) {
+          try {
+            await actor.claimAdminWithPin(ADMIN_PIN);
+          } catch (e) {
+            console.warn("claimAdminWithPin failed:", e);
+          }
+        }
+        setPinVerified(true);
+        setPinError(false);
+        void load();
+      } else {
+        setPinError(true);
+        setPinInput("");
+        setPinAttempts((a) => a + 1);
+      }
+    };
+
+    return (
       <div
-        className="flex items-center justify-between px-4 py-4"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: C.bgMain,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 40,
+          fontFamily: "Inter, system-ui, sans-serif",
+        }}
       >
-        {!sidebarCollapsed && (
-          <div>
-            <p className="text-sm font-bold" style={{ color: "#D6B35A" }}>
-              WealthStream
+        <div
+          data-ocid="admin.dialog"
+          style={{
+            background: C.bgCard,
+            border: `1px solid ${pinError ? C.dangerBorder : C.border}`,
+            borderTop: `3px solid ${C.amber}`,
+            borderRadius: 8,
+            padding: "40px 36px",
+            width: 380,
+            maxWidth: "calc(100vw - 32px)",
+          }}
+        >
+          {/* Header */}
+          <div style={{ marginBottom: 28, textAlign: "center" }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                background: C.amberBg,
+                border: `1px solid ${C.amberBorder}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 22,
+                color: C.amber,
+                margin: "0 auto 16px",
+              }}
+            >
+              &#9673;
+            </div>
+            <p
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: C.text,
+                margin: "0 0 4px",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Admin Access
             </p>
-            <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
-              Admin Panel
+            <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>
+              WealthStream Command Center
             </p>
           </div>
-        )}
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed((v) => !v)}
-          className="p-1.5 rounded-lg"
-          style={{ color: "#A8B2BA", background: "rgba(255,255,255,0.05)" }}
-        >
-          {sidebarCollapsed ? "→" : "←"}
-        </button>
+
+          {/* PIN input */}
+          <div style={{ marginBottom: 16 }}>
+            <label
+              htmlFor="admin-pin"
+              style={{
+                display: "block",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                color: C.muted,
+                textTransform: "uppercase",
+                marginBottom: 6,
+              }}
+            >
+              Security PIN
+            </label>
+            <input
+              id="admin-pin"
+              type="password"
+              inputMode="numeric"
+              maxLength={8}
+              value={pinInput}
+              onChange={(e) => {
+                setPinInput(e.target.value);
+                setPinError(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handlePinSubmit();
+              }}
+              placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+              data-ocid="admin.pin_input"
+              style={{
+                width: "100%",
+                padding: "11px 14px",
+                borderRadius: 6,
+                border: `1px solid ${pinError ? C.dangerBorder : C.border}`,
+                background: C.bgInput,
+                color: C.text,
+                fontSize: 18,
+                letterSpacing: 6,
+                textAlign: "center",
+                outline: "none",
+                boxSizing: "border-box",
+                transition: "border-color 0.15s",
+              }}
+            />
+            {pinError && (
+              <p
+                data-ocid="admin.pin_error_state"
+                style={{
+                  fontSize: 12,
+                  color: C.danger,
+                  margin: "6px 0 0",
+                }}
+              >
+                Incorrect PIN
+                {pinAttempts >= 3 ? " — too many attempts" : ""}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void handlePinSubmit()}
+            data-ocid="admin.pin_submit_button"
+            style={{
+              width: "100%",
+              padding: "11px 0",
+              borderRadius: 6,
+              background: `linear-gradient(135deg, #c99a12 0%, ${C.amber} 100%)`,
+              color: "#0a0e17",
+              fontWeight: 700,
+              fontSize: 14,
+              border: "none",
+              cursor: "pointer",
+              letterSpacing: "0.02em",
+            }}
+          >
+            Verify &amp; Unlock
+          </button>
+        </div>
       </div>
-      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INNER COMPONENTS (closures capture parent state)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ─── Sidebar ────────────────────────────────────────────────────────────────
+  const Sidebar = () => (
+    <div
+      style={{
+        width: 256,
+        flexShrink: 0,
+        display: "flex",
+        flexDirection: "column",
+        background: C.bgSidebar,
+        borderRight: `1px solid ${C.border}`,
+        overflow: "hidden",
+        height: "100%",
+      }}
+    >
+      {/* Brand */}
+      <div
+        style={{
+          padding: "18px 20px 14px",
+          borderBottom: `1px solid ${C.border}`,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 6,
+              background: C.amberBg,
+              border: `1px solid ${C.amberBorder}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: C.amber,
+              fontSize: 16,
+              flexShrink: 0,
+            }}
+          >
+            &#9673;
+          </div>
+          <div>
+            <p
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: C.amber,
+                margin: 0,
+                letterSpacing: "-0.01em",
+              }}
+            >
+              WealthStream
+            </p>
+            <p
+              style={{ fontSize: 10, color: C.muted, margin: 0, marginTop: 1 }}
+            >
+              Admin Command Center
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav
+        style={{
+          flex: 1,
+          padding: "10px 8px",
+          overflowY: "auto",
+        }}
+      >
         {sidebarItems.map((item) => {
           const active = tab === item.id;
           return (
             <button
-              type="button"
               key={item.id}
+              type="button"
               onClick={() => {
                 setTab(item.id);
                 void load();
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
-              style={{
-                background: active ? "rgba(31,163,106,0.12)" : "transparent",
-                color: active ? "#1FA36A" : "#A8B2BA",
-                border: active
-                  ? "1px solid rgba(31,163,106,0.2)"
-                  : "1px solid transparent",
-              }}
               data-ocid={`admin.${item.id}_tab`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                width: "100%",
+                padding: "9px 12px",
+                borderRadius: 6,
+                marginBottom: 2,
+                fontSize: 13,
+                fontWeight: active ? 600 : 400,
+                background: active ? C.amberBg : "transparent",
+                color: active ? C.amber : C.muted,
+                border: "none",
+                borderLeft: `3px solid ${active ? C.amber : "transparent"}`,
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "all 0.12s ease",
+              }}
             >
-              <span className="text-base flex-shrink-0">{item.icon}</span>
-              {!sidebarCollapsed && (
-                <>
-                  <span className="flex-1 text-left">{item.label}</span>
-                  {item.badge != null && item.badge > 0 && (
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded-full font-bold"
-                      style={{
-                        background: "rgba(214,179,90,0.2)",
-                        color: "#D6B35A",
-                      }}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </>
+              <span
+                style={{
+                  fontSize: 14,
+                  width: 18,
+                  textAlign: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {item.icon}
+              </span>
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {item.badge != null && item.badge > 0 && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 6px",
+                    borderRadius: 99,
+                    background: C.amber,
+                    color: "#0a0e17",
+                    lineHeight: "16px",
+                  }}
+                >
+                  {item.badge}
+                </span>
               )}
             </button>
           );
         })}
       </nav>
-      {!sidebarCollapsed && (
-        <div
-          className="px-4 py-3 text-xs"
-          style={{
-            borderTop: "1px solid rgba(255,255,255,0.07)",
-            color: "rgba(255,255,255,0.2)",
-          }}
-        >
-          Command Center v2.0
-        </div>
-      )}
+
+      {/* Footer */}
+      <div
+        style={{
+          padding: "12px 20px",
+          borderTop: `1px solid ${C.border}`,
+        }}
+      >
+        <p style={{ fontSize: 11, color: C.dim, margin: 0 }}>
+          v2.0 &#8212; Command Center
+        </p>
+      </div>
     </div>
   );
 
-  // --- Dashboard ---
+  // ─── Dashboard ──────────────────────────────────────────────────────────────
   const Dashboard = () => (
-    <div className="p-6 space-y-6">
-      <h2 className="text-xl font-bold text-white">Dashboard Overview</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div
+      style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20 }}
+    >
+      {/* Page title */}
+      <div>
+        <h2
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            color: C.text,
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          Dashboard Overview
+        </h2>
+        <p style={{ fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+          Real-time platform metrics
+        </p>
+      </div>
+
+      {/* Stat cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 12,
+        }}
+      >
         {[
           {
             label: "Total Users",
             value: users.length,
-            icon: "👥",
-            glow: "#1FA36A",
+            color: C.emerald,
+            desc: "Registered accounts",
           },
           {
             label: "Pending Deposits",
             value: pendingDeposits.length,
-            icon: "💰",
-            glow: "#D6B35A",
+            color: C.amber,
+            desc: "Awaiting approval",
           },
           {
             label: "Pending Withdrawals",
             value: pendingWithdrawals.length,
-            icon: "↑",
-            glow: "#3B82F6",
+            color: C.blue,
+            desc: "In queue",
           },
           {
             label: "Flagged Users",
             value: flagged.length,
-            icon: "🚩",
-            glow: "#EF4444",
+            color: C.danger,
+            desc: "Security alerts",
           },
         ].map((stat, i) => (
           <div
             key={stat.label}
-            className="rounded-2xl p-5"
-            style={{
-              background: "rgba(13,20,32,0.8)",
-              border: `1px solid ${stat.glow}30`,
-              boxShadow: `0 0 20px ${stat.glow}10`,
-            }}
             data-ocid={`admin.stat_card.${i + 1}`}
+            style={{
+              background: C.bgCard,
+              border: `1px solid ${C.border}`,
+              borderTop: `4px solid ${stat.color}`,
+              borderRadius: 8,
+              padding: "18px 20px",
+            }}
           >
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-2xl">{stat.icon}</span>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: 10,
+              }}
+            >
               <span
-                className="text-xs px-2 py-0.5 rounded-full"
-                style={{ background: `${stat.glow}20`, color: stat.glow }}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: C.muted,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
               >
-                Live
+                {stat.label}
+              </span>
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  padding: "2px 6px",
+                  borderRadius: 99,
+                  background: `${stat.color}20`,
+                  color: stat.color,
+                  letterSpacing: "0.08em",
+                }}
+              >
+                LIVE
               </span>
             </div>
-            <p className="text-3xl font-bold text-white">{stat.value}</p>
-            <p className="text-xs mt-1" style={{ color: "#A8B2BA" }}>
-              {stat.label}
+            <p
+              style={{
+                fontSize: 32,
+                fontWeight: 800,
+                color: C.text,
+                margin: 0,
+                lineHeight: 1,
+                letterSpacing: "-0.03em",
+              }}
+            >
+              {stat.value}
+            </p>
+            <p
+              style={{
+                fontSize: 11,
+                color: C.muted,
+                margin: "6px 0 0",
+              }}
+            >
+              {stat.desc}
             </p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Recent activity tables */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+        }}
+      >
         {/* Recent Deposits */}
-        <div
-          className="rounded-2xl p-4"
-          style={{
-            background: "rgba(13,20,32,0.8)",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          <p className="text-sm font-semibold text-white mb-3">
-            Recent Deposits
-          </p>
-          {deposits.slice(0, 5).map((d) => (
-            <div
-              key={String(d.id)}
-              className="flex justify-between items-center py-2"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-            >
-              <div>
-                <p className="text-xs font-mono" style={{ color: "#A8B2BA" }}>
-                  {shortId(d.userId)}
-                </p>
-                <p className="text-sm font-semibold text-white">
-                  {fmt(d.amount)}
-                </p>
-              </div>
-              <span
-                className="text-xs px-2 py-0.5 rounded-full"
-                style={{
-                  background:
-                    "Approved" in d.status
-                      ? "rgba(31,163,106,0.2)"
-                      : "Rejected" in d.status
-                        ? "rgba(239,68,68,0.2)"
-                        : "rgba(245,158,11,0.2)",
-                  color:
-                    "Approved" in d.status
-                      ? "#1FA36A"
-                      : "Rejected" in d.status
-                        ? "#EF4444"
-                        : "#F59E0B",
-                }}
-              >
-                {"Approved" in d.status
-                  ? "Approved"
-                  : "Rejected" in d.status
-                    ? "Rejected"
-                    : "Pending"}
-              </span>
-            </div>
-          ))}
-          {deposits.length === 0 && (
-            <p className="text-xs text-[#A8B2BA]">No deposits yet</p>
-          )}
-        </div>
+        <Panel title="Recent Deposits" topBorderColor={C.amber}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={TH_STYLE}>User</th>
+                <th style={TH_STYLE}>Amount</th>
+                <th style={TH_STYLE}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deposits.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={3}
+                    style={{
+                      ...TD_STYLE,
+                      color: C.muted,
+                      textAlign: "center",
+                      padding: "20px 16px",
+                    }}
+                  >
+                    No deposits yet
+                  </td>
+                </tr>
+              )}
+              {deposits.slice(0, 6).map((d) => {
+                const st = depStatusInfo(d);
+                return (
+                  <tr key={String(d.id)}>
+                    <td style={TD_MONO}>{shortId(d.userId)}</td>
+                    <td style={TD_STYLE}>
+                      <span style={{ fontWeight: 600 }}>{fmt(d.amount)}</span>
+                    </td>
+                    <td style={TD_STYLE}>
+                      <StatusDot color={st.color} label={st.label} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Panel>
 
         {/* Recent Withdrawals */}
-        <div
-          className="rounded-2xl p-4"
-          style={{
-            background: "rgba(13,20,32,0.8)",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          <p className="text-sm font-semibold text-white mb-3">
-            Recent Withdrawals
-          </p>
-          {withdrawals.slice(0, 5).map((w) => (
-            <div
-              key={String(w.id)}
-              className="flex justify-between items-center py-2"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-            >
-              <div>
-                <p className="text-xs font-mono" style={{ color: "#A8B2BA" }}>
-                  {shortId(w.userId)}
-                </p>
-                <p className="text-sm font-semibold text-white">
-                  {fmt(w.amount)}
-                </p>
-              </div>
-              <span
-                className="text-xs px-2 py-0.5 rounded-full"
-                style={{
-                  background:
-                    "Completed" in w.status
-                      ? "rgba(31,163,106,0.2)"
-                      : "Rejected" in w.status
-                        ? "rgba(239,68,68,0.2)"
-                        : "rgba(245,158,11,0.2)",
-                  color:
-                    "Completed" in w.status
-                      ? "#1FA36A"
-                      : "Rejected" in w.status
-                        ? "#EF4444"
-                        : "#F59E0B",
-                }}
-              >
-                {"Completed" in w.status
-                  ? "Done"
-                  : "Rejected" in w.status
-                    ? "Rejected"
-                    : "Pending"}
-              </span>
-            </div>
-          ))}
-          {withdrawals.length === 0 && (
-            <p className="text-xs text-[#A8B2BA]">No withdrawals yet</p>
-          )}
-        </div>
+        <Panel title="Recent Withdrawals" topBorderColor={C.blue}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={TH_STYLE}>User</th>
+                <th style={TH_STYLE}>Amount</th>
+                <th style={TH_STYLE}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {withdrawals.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={3}
+                    style={{
+                      ...TD_STYLE,
+                      color: C.muted,
+                      textAlign: "center",
+                      padding: "20px 16px",
+                    }}
+                  >
+                    No withdrawals yet
+                  </td>
+                </tr>
+              )}
+              {withdrawals.slice(0, 6).map((w) => {
+                const st = wdStatusInfo(w);
+                return (
+                  <tr key={String(w.id)}>
+                    <td style={TD_MONO}>{shortId(w.userId)}</td>
+                    <td style={TD_STYLE}>
+                      <span style={{ fontWeight: 600 }}>{fmt(w.amount)}</span>
+                    </td>
+                    <td style={TD_STYLE}>
+                      <StatusDot color={st.color} label={st.label} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Panel>
       </div>
     </div>
   );
 
-  // --- User Directory ---
+  // ─── User Directory ──────────────────────────────────────────────────────────
   const UserDirectory = () => (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">User Directory</h2>
-        <span className="text-sm" style={{ color: "#A8B2BA" }}>
-          {users.length} total
-        </span>
-      </div>
-      <input
-        type="text"
-        placeholder="Search by ID or Member ID..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        className="w-full px-4 py-2.5 rounded-xl text-white placeholder-[#A8B2BA] outline-none text-sm"
+    <div
+      style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}
+    >
+      {/* Header row */}
+      <div
         style={{
-          background: "rgba(255,255,255,0.05)",
-          border: "1px solid rgba(255,255,255,0.1)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
         }}
-        data-ocid="admin.user_search_input"
-      />
-
-      {filteredUsers.length === 0 ? (
-        <div className="text-center py-10" data-ocid="admin.users_empty_state">
-          <p className="text-[#A8B2BA] text-sm">No users found</p>
-          <button
-            onClick={() => void load()}
-            className="mt-3 px-4 py-2 text-xs rounded-lg text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/10 transition-colors"
-            type="button"
-            data-ocid="admin.users_reload_button"
+      >
+        <div>
+          <h2
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: C.text,
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}
           >
-            ↺ Reload
-          </button>
+            User Directory
+          </h2>
+          <p style={{ fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+            {users.length} registered accounts
+          </p>
         </div>
-      ) : (
-        <div className="space-y-2">
-          {filteredUsers.map((u, idx) => {
-            const uid = u.userId.toString();
-            const isExpanded = expandedUser === uid;
-            const isFrozen = frozenUsers.has(uid);
-            const ev = editValues[uid] || {
-              deposited: "",
-              withdrawable: "",
-              frozen: "",
-            };
-            const activity = getSimulatedActivity(uid);
-            const device = getDeviceData(uid);
+        <input
+          type="text"
+          placeholder="Search by principal or member ID&#8230;"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          data-ocid="admin.user_search_input"
+          style={{
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: `1px solid ${C.border}`,
+            background: C.bgInput,
+            color: C.text,
+            fontSize: 13,
+            outline: "none",
+            width: 260,
+            maxWidth: "100%",
+          }}
+        />
+      </div>
 
-            return (
-              <div
-                key={uid}
-                className="rounded-2xl overflow-hidden"
-                style={{
-                  background: "rgba(13,20,32,0.8)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-                data-ocid={`admin.users_row.${idx + 1}`}
-              >
-                {/* Row header */}
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p
-                        className="text-xs font-mono"
-                        style={{ color: "#A8B2BA" }}
+      {/* Table */}
+      <Panel>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}
+          >
+            <thead>
+              <tr>
+                <th style={TH_STYLE}>Member ID</th>
+                <th style={TH_STYLE}>Principal</th>
+                <th style={TH_STYLE}>Deposited</th>
+                <th style={TH_STYLE}>Earnings</th>
+                <th style={TH_STYLE}>Frozen</th>
+                <th style={TH_STYLE}>Flags</th>
+                <th style={{ ...TH_STYLE, textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    data-ocid="admin.users_empty_state"
+                    style={{
+                      ...TD_STYLE,
+                      color: C.muted,
+                      textAlign: "center",
+                      padding: "32px 16px",
+                    }}
+                  >
+                    {searchQuery
+                      ? "No users match your search"
+                      : "No users registered yet"}
+                    {!searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => void load()}
+                        data-ocid="admin.users_reload_button"
+                        style={{
+                          display: "block",
+                          margin: "10px auto 0",
+                          padding: "6px 16px",
+                          borderRadius: 4,
+                          fontSize: 12,
+                          background: C.amberBg,
+                          color: C.amber,
+                          border: `1px solid ${C.amberBorder}`,
+                          cursor: "pointer",
+                        }}
                       >
-                        {shortId(u.userId)}
-                      </p>
-                      {u.uniqueId && u.uniqueId.trim() !== "" ? (
-                        <span
-                          className="text-xs font-mono px-1.5 py-0.5 rounded"
-                          style={{
-                            background: "rgba(255,215,0,0.1)",
-                            border: "1px solid rgba(255,215,0,0.3)",
-                            color: "#FFD700",
-                          }}
-                        >
-                          {u.uniqueId}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-[#A8B2BA]">—</span>
-                      )}
-                      {u.isAdmin && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400">
-                          Admin
-                        </span>
-                      )}
-                      {u.isFlagged && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
-                          Flagged
-                        </span>
-                      )}
-                      {isFrozen && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400">
-                          Frozen
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-3 mt-1">
-                      <span className="text-xs text-white">
-                        Dep: {fmt(u.depositedBalance)}
-                      </span>
-                      <span className="text-xs" style={{ color: "#1FA36A" }}>
-                        Earn: {fmt(u.withdrawableBalance)}
-                      </span>
-                      <span className="text-xs text-yellow-400">
-                        Frozen: {fmt(u.frozenBalance)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleFreeze(uid)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                      style={{
-                        background: isFrozen
-                          ? "rgba(59,130,246,0.15)"
-                          : "rgba(255,255,255,0.06)",
-                        color: isFrozen ? "#60A5FA" : "#A8B2BA",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                      }}
-                      data-ocid={`admin.users_toggle.${idx + 1}`}
-                    >
-                      {isFrozen ? "Unfreeze" : "Freeze"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedUser(isExpanded ? null : uid)}
-                      className="text-xs px-3 py-1.5 rounded-lg"
+                        &#8635; Reload
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )}
+              {filteredUsers.map((u, idx) => {
+                const uid = u.userId.toString();
+                const isExpanded = expandedUser === uid;
+                const isFrozen = frozenUsers.has(uid);
+                const ev = editValues[uid] || {
+                  deposited: "",
+                  withdrawable: "",
+                  frozen: "",
+                };
+
+                return (
+                  <>
+                    <tr
+                      key={uid}
+                      data-ocid={`admin.users_row.${idx + 1}`}
                       style={{
                         background: isExpanded
-                          ? "rgba(31,163,106,0.15)"
-                          : "rgba(255,255,255,0.06)",
-                        color: isExpanded ? "#1FA36A" : "#A8B2BA",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                      }}
-                      data-ocid={`admin.users_edit_button.${idx + 1}`}
-                    >
-                      {isExpanded ? "Close" : "Edit"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded panel */}
-                {isExpanded && (
-                  <div
-                    className="px-4 pb-4 space-y-4"
-                    style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
-                  >
-                    {/* Balance Edit */}
-                    <div className="pt-3">
-                      <p className="text-xs font-semibold text-white mb-2">
-                        ⚡ Live Balance Override
-                      </p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(["deposited", "withdrawable", "frozen"] as const).map(
-                          (field) => (
-                            <div key={field}>
-                              <p className="text-xs text-[#A8B2BA] mb-1 capitalize">
-                                {field}
-                              </p>
-                              <div className="flex gap-1">
-                                <input
-                                  type="number"
-                                  placeholder="+amount"
-                                  value={ev[field]}
-                                  onChange={(e) =>
-                                    setEditValues((prev) => ({
-                                      ...prev,
-                                      [uid]: { ...ev, [field]: e.target.value },
-                                    }))
-                                  }
-                                  className="flex-1 px-2 py-1.5 rounded-lg text-white text-xs outline-none min-w-0"
-                                  style={{
-                                    background: "rgba(255,255,255,0.06)",
-                                    border: "1px solid rgba(255,255,255,0.1)",
-                                  }}
-                                  data-ocid={`admin.users_${field}_input.${idx + 1}`}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddFunds(u, field)}
-                                  className="px-2 py-1.5 rounded-lg text-xs text-white"
-                                  style={{
-                                    background:
-                                      "linear-gradient(135deg, #137A56, #1FA36A)",
-                                  }}
-                                  data-ocid={`admin.users_${field}_save_button.${idx + 1}`}
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Schedule Freeze */}
-                    <div>
-                      <p className="text-xs font-semibold text-white mb-2">
-                        📅 Schedule Freeze
-                      </p>
-                      <div className="flex gap-2">
-                        <input
-                          type="datetime-local"
-                          value={freezeSchedule[uid] || ""}
-                          onChange={(e) =>
-                            setFreezeSchedule((prev) => ({
-                              ...prev,
-                              [uid]: e.target.value,
-                            }))
-                          }
-                          className="flex-1 px-2 py-1.5 rounded-lg text-white text-xs outline-none"
-                          style={{
-                            background: "rgba(255,255,255,0.06)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            colorScheme: "dark",
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!freezeSchedule[uid]) {
-                              toast.error("Select a date/time");
-                              return;
-                            }
-                            toast.success(
-                              `Freeze scheduled for ${new Date(freezeSchedule[uid]).toLocaleString("en-IN")}`,
-                            );
-                          }}
-                          className="px-3 py-1.5 rounded-lg text-xs text-white flex-shrink-0"
-                          style={{
-                            background: "rgba(59,130,246,0.2)",
-                            border: "1px solid rgba(59,130,246,0.3)",
-                            color: "#60A5FA",
-                          }}
-                        >
-                          Schedule
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Device Forensics */}
-                    <div>
-                      <p className="text-xs font-semibold text-white mb-2">
-                        🔬 Device Intelligence
-                      </p>
-                      <div
-                        className="rounded-xl p-3 grid grid-cols-2 gap-2 text-xs"
-                        style={{
-                          background: "rgba(0,0,0,0.3)",
-                          border: "1px solid rgba(255,255,255,0.06)",
-                        }}
-                      >
-                        <div>
-                          <span style={{ color: "#A8B2BA" }}>IMEI: </span>
-                          <span className="font-mono text-white">
-                            {device.imei}
-                          </span>
-                        </div>
-                        <div>
-                          <span style={{ color: "#A8B2BA" }}>Model: </span>
-                          <span className="text-white">{device.model}</span>
-                        </div>
-                        <div>
-                          <span style={{ color: "#A8B2BA" }}>OS: </span>
-                          <span className="text-white">{device.os}</span>
-                        </div>
-                        <div>
-                          <span style={{ color: "#A8B2BA" }}>Root: </span>
-                          <span
-                            style={{
-                              color: device.rooted ? "#EF4444" : "#1FA36A",
-                            }}
-                          >
-                            {device.rooted ? "⚠ Rooted" : "✓ Clean"}
-                          </span>
-                        </div>
-                        <div>
-                          <span style={{ color: "#A8B2BA" }}>IP: </span>
-                          <span className="font-mono text-white">
-                            {device.ip}
-                          </span>
-                        </div>
-                        <div>
-                          <span style={{ color: "#A8B2BA" }}>Location: </span>
-                          <span className="text-white">{device.location}</span>
-                        </div>
-                        <div className="col-span-2">
-                          <span style={{ color: "#A8B2BA" }}>
-                            Permissions:{" "}
-                          </span>
-                          {Object.entries(device.permissions).map(([k, v]) => (
-                            <span
-                              key={k}
-                              className="mr-2"
-                              style={{ color: v ? "#1FA36A" : "#EF4444" }}
-                            >
-                              {k} {v ? "✓" : "✗"}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Activity Log */}
-                    <div>
-                      <p className="text-xs font-semibold text-white mb-2">
-                        📡 Live Activity Stream
-                      </p>
-                      <div
-                        className="rounded-xl overflow-hidden"
-                        style={{
-                          background: "rgba(0,0,0,0.3)",
-                          border: "1px solid rgba(255,255,255,0.06)",
-                        }}
-                      >
-                        {activity.map((a, i) => (
-                          <div
-                            key={`activity-${a.id}`}
-                            className="flex justify-between px-3 py-2 text-xs"
-                            style={{
-                              borderBottom:
-                                i < activity.length - 1
-                                  ? "1px solid rgba(255,255,255,0.04)"
-                                  : "none",
-                            }}
-                          >
-                            <span style={{ color: "#A8B2BA" }}>{a.action}</span>
-                            <span style={{ color: "rgba(255,255,255,0.3)" }}>
-                              {a.time}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Bank details note */}
-                    <div
-                      className="rounded-xl px-3 py-2 text-xs"
-                      style={{
-                        background: "rgba(214,179,90,0.08)",
-                        border: "1px solid rgba(214,179,90,0.2)",
-                        color: "#D6B35A",
+                          ? "rgba(240,180,41,0.04)"
+                          : "transparent",
+                        transition: "background 0.1s",
                       }}
                     >
-                      ⚡ Admin Override: Bank detail edits bypass the
-                      3-times/month limit. Use with caution.
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-
-  // --- Payment Approvals ---
-  const PaymentApprovals = () => (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Payment Approvals</h2>
-        <span
-          className="text-sm px-3 py-1 rounded-full"
-          style={{ background: "rgba(245,158,11,0.2)", color: "#F59E0B" }}
-        >
-          {pendingDeposits.length} Pending
-        </span>
-      </div>
-
-      {deposits.length === 0 ? (
-        <div
-          className="text-center py-16"
-          data-ocid="admin.deposits_empty_state"
-        >
-          <div className="text-5xl mb-3">📭</div>
-          <p className="text-[#A8B2BA]">No deposit requests</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {deposits.map((d, idx) => (
-            <div
-              key={String(d.id)}
-              className="rounded-2xl p-4"
-              style={{
-                background: "rgba(13,20,32,0.8)",
-                border: "1px solid rgba(255,255,255,0.07)",
-              }}
-              data-ocid={`admin.deposits_row.${idx + 1}`}
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <p
-                      className="text-xs font-mono"
-                      style={{ color: "#A8B2BA" }}
-                    >
-                      {shortId(d.userId)}
-                    </p>
-                    {(() => {
-                      const u = users.find(
-                        (u) => u.userId.toString() === d.userId.toString(),
-                      );
-                      return u?.uniqueId && u.uniqueId.trim() !== "" ? (
-                        <span
-                          className="text-xs font-mono px-1.5 py-0.5 rounded"
-                          style={{
-                            background: "rgba(255,215,0,0.1)",
-                            border: "1px solid rgba(255,215,0,0.25)",
-                            color: "#FFD700",
-                          }}
-                        >
-                          {u.uniqueId}
-                        </span>
-                      ) : null;
-                    })()}
-                  </div>
-                  <p className="text-xl font-bold" style={{ color: "#D6B35A" }}>
-                    {fmt(d.amount)}
-                  </p>
-                  <p
-                    className="text-xs mt-1"
-                    style={{ color: "rgba(255,255,255,0.3)" }}
-                  >
-                    {new Date(Number(d.createdAt) / 1e6).toLocaleString(
-                      "en-IN",
-                    )}
-                  </p>
-                </div>
-                <span
-                  className="text-xs px-2 py-1 rounded-full"
-                  style={{
-                    background:
-                      "Approved" in d.status
-                        ? "rgba(31,163,106,0.2)"
-                        : "Rejected" in d.status
-                          ? "rgba(239,68,68,0.2)"
-                          : "rgba(245,158,11,0.2)",
-                    color:
-                      "Approved" in d.status
-                        ? "#1FA36A"
-                        : "Rejected" in d.status
-                          ? "#EF4444"
-                          : "#F59E0B",
-                  }}
-                >
-                  {"Approved" in d.status
-                    ? "Approved"
-                    : "Rejected" in d.status
-                      ? "Rejected"
-                      : "Pending"}
-                </span>
-              </div>
-              {/* Screenshot placeholder */}
-              <div
-                className="rounded-xl mb-3 flex items-center justify-center h-20 text-sm"
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px dashed rgba(255,255,255,0.1)",
-                  color: "#A8B2BA",
-                }}
-              >
-                📷 Screenshot not available (legacy)
-              </div>
-              {"Pending" in d.status && (
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => approveDeposit(d.id)}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
-                    style={{
-                      background: "linear-gradient(135deg, #137A56, #1FA36A)",
-                    }}
-                    data-ocid={`admin.deposits_approve_button.${idx + 1}`}
-                  >
-                    ✓ Approve
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => rejectDeposit(d.id)}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-medium"
-                    style={{
-                      background: "rgba(239,68,68,0.1)",
-                      border: "1px solid rgba(239,68,68,0.3)",
-                      color: "#EF4444",
-                    }}
-                    data-ocid={`admin.deposits_reject_button.${idx + 1}`}
-                  >
-                    ✗ Reject
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  // --- Withdrawal Queue ---
-  const WithdrawalQueue = () => (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Withdrawal Queue</h2>
-        <span
-          className="text-sm px-3 py-1 rounded-full"
-          style={{ background: "rgba(245,158,11,0.2)", color: "#F59E0B" }}
-        >
-          {pendingWithdrawals.length} Pending
-        </span>
-      </div>
-
-      {withdrawals.length === 0 ? (
-        <div
-          className="text-center py-16"
-          data-ocid="admin.withdrawals_empty_state"
-        >
-          <div className="text-5xl mb-3">📭</div>
-          <p className="text-[#A8B2BA]">No withdrawal requests</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {withdrawals.map((w, idx) => {
-            const suspicious = isSuspicious(w);
-            return (
-              <div
-                key={String(w.id)}
-                className="rounded-2xl p-4"
-                style={{
-                  background: "rgba(13,20,32,0.8)",
-                  border: suspicious
-                    ? "1px solid rgba(239,68,68,0.3)"
-                    : "1px solid rgba(255,255,255,0.07)",
-                }}
-                data-ocid={`admin.withdrawals_row.${idx + 1}`}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p
-                        className="text-xs font-mono"
-                        style={{ color: "#A8B2BA" }}
-                      >
-                        {shortId(w.userId)}
-                      </p>
-                      {(() => {
-                        const u = users.find(
-                          (u) => u.userId.toString() === w.userId.toString(),
-                        );
-                        return u?.uniqueId && u.uniqueId.trim() !== "" ? (
+                      {/* Member ID */}
+                      <td style={TD_STYLE}>
+                        {u.uniqueId && u.uniqueId.trim() !== "" ? (
                           <span
-                            className="text-xs font-mono px-1.5 py-0.5 rounded"
                             style={{
-                              background: "rgba(255,215,0,0.1)",
-                              border: "1px solid rgba(255,215,0,0.25)",
-                              color: "#FFD700",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              fontFamily:
+                                "'JetBrains Mono', 'Courier New', monospace",
+                              color: C.amber,
+                              background: C.amberBg,
+                              border: `1px solid ${C.amberBorder}`,
+                              borderRadius: 4,
+                              padding: "2px 6px",
                             }}
                           >
                             {u.uniqueId}
                           </span>
-                        ) : null;
-                      })()}
-                    </div>
-                    <p className="text-xl font-bold text-white">
-                      {fmt(w.amount)}
-                    </p>
-                    <p
-                      className="text-xs mt-0.5"
-                      style={{ color: "rgba(255,255,255,0.3)" }}
-                    >
-                      {new Date(Number(w.createdAt) / 1e6).toLocaleString(
-                        "en-IN",
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full"
-                      style={{
-                        background:
-                          "Completed" in w.status
-                            ? "rgba(31,163,106,0.2)"
-                            : "Rejected" in w.status
-                              ? "rgba(239,68,68,0.2)"
-                              : "rgba(245,158,11,0.2)",
-                        color:
-                          "Completed" in w.status
-                            ? "#1FA36A"
-                            : "Rejected" in w.status
-                              ? "#EF4444"
-                              : "#F59E0B",
-                      }}
-                    >
-                      {"Completed" in w.status
-                        ? "Completed"
-                        : "Rejected" in w.status
-                          ? "Rejected"
-                          : "Pending"}
-                    </span>
-                    {suspicious && (
-                      <span
-                        className="text-xs px-2 py-0.5 rounded-full font-bold"
+                        ) : (
+                          <span style={{ color: C.muted, fontSize: 12 }}>
+                            —
+                          </span>
+                        )}
+                      </td>
+                      {/* Principal */}
+                      <td style={TD_MONO}>{shortId(u.userId)}</td>
+                      {/* Balances */}
+                      <td style={TD_STYLE}>
+                        <span style={{ fontWeight: 600 }}>
+                          {fmt(u.depositedBalance)}
+                        </span>
+                      </td>
+                      <td style={{ ...TD_STYLE, color: C.emerald }}>
+                        <span style={{ fontWeight: 600 }}>
+                          {fmt(u.withdrawableBalance)}
+                        </span>
+                      </td>
+                      <td style={{ ...TD_STYLE, color: C.warning }}>
+                        {fmt(u.frozenBalance)}
+                      </td>
+                      {/* Flags */}
+                      <td style={TD_STYLE}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 4,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {u.isAdmin && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: "1px 6px",
+                                borderRadius: 3,
+                                background: C.amberBg,
+                                color: C.amber,
+                                border: `1px solid ${C.amberBorder}`,
+                              }}
+                            >
+                              ADMIN
+                            </span>
+                          )}
+                          {u.isFlagged && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: "1px 6px",
+                                borderRadius: 3,
+                                background: C.dangerBg,
+                                color: C.danger,
+                                border: `1px solid ${C.dangerBorder}`,
+                              }}
+                            >
+                              FLAGGED
+                            </span>
+                          )}
+                          {isFrozen && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: "1px 6px",
+                                borderRadius: 3,
+                                background: C.blueBg,
+                                color: C.blue,
+                                border: "1px solid rgba(59,130,246,0.2)",
+                              }}
+                            >
+                              FROZEN
+                            </span>
+                          )}
+                          {!u.isAdmin && !u.isFlagged && !isFrozen && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                color: C.muted,
+                              }}
+                            >
+                              Active
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {/* Actions */}
+                      <td
                         style={{
-                          background: "rgba(239,68,68,0.2)",
-                          color: "#EF4444",
+                          ...TD_STYLE,
+                          textAlign: "right",
                         }}
                       >
-                        ⚠ SUSPICIOUS
-                      </span>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <ActionBtn
+                            onClick={() => toggleFreeze(uid)}
+                            color={isFrozen ? C.blue : C.muted}
+                            bg={isFrozen ? C.blueBg : "rgba(255,255,255,0.04)"}
+                            border={
+                              isFrozen ? "rgba(59,130,246,0.2)" : C.border
+                            }
+                            ocid={`admin.users_toggle.${idx + 1}`}
+                          >
+                            {isFrozen ? "Unfreeze" : "Freeze"}
+                          </ActionBtn>
+                          <ActionBtn
+                            onClick={() =>
+                              setExpandedUser(isExpanded ? null : uid)
+                            }
+                            color={isExpanded ? C.amber : C.muted}
+                            bg={
+                              isExpanded ? C.amberBg : "rgba(255,255,255,0.04)"
+                            }
+                            border={isExpanded ? C.amberBorder : C.border}
+                            ocid={`admin.users_edit_button.${idx + 1}`}
+                          >
+                            {isExpanded ? "Close" : "Edit"}
+                          </ActionBtn>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expanded edit panel */}
+                    {isExpanded && (
+                      <tr key={`${uid}-expand`}>
+                        <td
+                          colSpan={7}
+                          style={{
+                            padding: 0,
+                            borderBottom: `1px solid ${C.borderSub}`,
+                          }}
+                        >
+                          <div
+                            style={{
+                              background: "rgba(240,180,41,0.03)",
+                              borderTop: `1px solid ${C.amberBorder}`,
+                              padding: "16px 20px",
+                              display: "grid",
+                              gridTemplateColumns: "1fr 1fr 1fr",
+                              gap: 16,
+                            }}
+                          >
+                            {/* Balance overrides */}
+                            <div>
+                              <p
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: C.muted,
+                                  letterSpacing: "0.06em",
+                                  textTransform: "uppercase",
+                                  margin: "0 0 10px",
+                                }}
+                              >
+                                Balance Override
+                              </p>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 8,
+                                }}
+                              >
+                                {(
+                                  [
+                                    "deposited",
+                                    "withdrawable",
+                                    "frozen",
+                                  ] as const
+                                ).map((field) => (
+                                  <div
+                                    key={field}
+                                    style={{
+                                      display: "flex",
+                                      gap: 6,
+                                      alignItems: "center",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: 11,
+                                        color: C.muted,
+                                        width: 76,
+                                        flexShrink: 0,
+                                        textTransform: "capitalize",
+                                      }}
+                                    >
+                                      {field}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      placeholder="+amount"
+                                      value={ev[field]}
+                                      onChange={(e) =>
+                                        setEditValues((prev) => ({
+                                          ...prev,
+                                          [uid]: {
+                                            ...ev,
+                                            [field]: e.target.value,
+                                          },
+                                        }))
+                                      }
+                                      data-ocid={`admin.users_${field}_input.${idx + 1}`}
+                                      style={{
+                                        flex: 1,
+                                        padding: "5px 8px",
+                                        borderRadius: 4,
+                                        border: `1px solid ${C.border}`,
+                                        background: C.bgInput,
+                                        color: C.text,
+                                        fontSize: 12,
+                                        outline: "none",
+                                        minWidth: 0,
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void handleAddFunds(u, field)
+                                      }
+                                      data-ocid={`admin.users_${field}_save_button.${idx + 1}`}
+                                      style={{
+                                        padding: "5px 10px",
+                                        borderRadius: 4,
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        background: C.emeraldBg,
+                                        color: C.emerald,
+                                        border: `1px solid ${C.emeraldBorder}`,
+                                        cursor: "pointer",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Schedule freeze */}
+                            <div>
+                              <p
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: C.muted,
+                                  letterSpacing: "0.06em",
+                                  textTransform: "uppercase",
+                                  margin: "0 0 10px",
+                                }}
+                              >
+                                Schedule Freeze
+                              </p>
+                              <input
+                                type="datetime-local"
+                                value={freezeSchedule[uid] || ""}
+                                onChange={(e) =>
+                                  setFreezeSchedule((p) => ({
+                                    ...p,
+                                    [uid]: e.target.value,
+                                  }))
+                                }
+                                style={{
+                                  width: "100%",
+                                  padding: "6px 8px",
+                                  borderRadius: 4,
+                                  border: `1px solid ${C.border}`,
+                                  background: C.bgInput,
+                                  color: C.text,
+                                  fontSize: 12,
+                                  outline: "none",
+                                  marginBottom: 8,
+                                  boxSizing: "border-box",
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (freezeSchedule[uid]) {
+                                    toast.success(
+                                      `Freeze scheduled for ${freezeSchedule[uid]}`,
+                                    );
+                                  }
+                                }}
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: 4,
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  background: C.warningBg,
+                                  color: C.warning,
+                                  border: `1px solid ${C.warningBorder}`,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Schedule
+                              </button>
+                            </div>
+
+                            {/* Activity log */}
+                            <div>
+                              <p
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: C.muted,
+                                  letterSpacing: "0.06em",
+                                  textTransform: "uppercase",
+                                  margin: "0 0 10px",
+                                }}
+                              >
+                                Recent Activity
+                              </p>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 6,
+                                }}
+                              >
+                                {getSimulatedActivity(uid).map((ev) => (
+                                  <div
+                                    key={ev.id}
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      fontSize: 11,
+                                      gap: 8,
+                                    }}
+                                  >
+                                    <span style={{ color: C.text }}>
+                                      {ev.action}
+                                    </span>
+                                    <span
+                                      style={{
+                                        color: C.muted,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {ev.time}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                </div>
-                {"Pending" in w.status && (
-                  <div className="flex gap-2 mt-3">
-                    <button
-                      type="button"
-                      onClick={() => completeWithdrawal(w.id)}
-                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
-                      style={{
-                        background: "linear-gradient(135deg, #137A56, #1FA36A)",
-                      }}
-                      data-ocid={`admin.withdrawals_complete_button.${idx + 1}`}
-                    >
-                      ✓ Mark Completed
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => rejectWithdrawal(w.id)}
-                      className="flex-1 py-2.5 rounded-xl text-sm font-medium"
-                      style={{
-                        background: "rgba(239,68,68,0.1)",
-                        border: "1px solid rgba(239,68,68,0.3)",
-                        color: "#EF4444",
-                      }}
-                      data-ocid={`admin.withdrawals_reject_button.${idx + 1}`}
-                    >
-                      ✗ Reject
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </Panel>
     </div>
   );
 
-  // --- Security Alerts ---
-  const SecurityAlerts = () => (
-    <div className="p-6 space-y-6">
-      <h2 className="text-xl font-bold text-white">Security Alerts</h2>
-
-      {/* Multi-Account Tracker */}
+  // ─── Payment Approvals ───────────────────────────────────────────────────────
+  const PaymentApprovals = () => (
+    <div
+      style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}
+    >
       <div
-        className="rounded-2xl p-4"
         style={{
-          background: "rgba(13,20,32,0.8)",
-          border: "1px solid rgba(239,68,68,0.15)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
         }}
       >
-        <p className="text-sm font-semibold text-white mb-3">
-          🔗 Multi-Account Tracker
-        </p>
-        {flagged.length === 0 ? (
-          <p className="text-sm text-[#A8B2BA]">No flagged accounts</p>
-        ) : (
-          <div className="space-y-2">
-            {flagged.map((u, idx) => (
-              <div
-                key={u.userId.toString()}
-                className="flex items-center justify-between p-3 rounded-xl"
-                style={{
-                  background: "rgba(239,68,68,0.05)",
-                  border: "1px solid rgba(239,68,68,0.15)",
-                }}
-                data-ocid={`admin.security_flagged_row.${idx + 1}`}
-              >
-                <div>
-                  <p className="text-xs font-mono text-white">
-                    {shortId(u.userId)}
-                  </p>
-                  <div className="flex gap-2 mt-1">
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded"
+        <div>
+          <h2
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: C.text,
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Payment Approvals
+          </h2>
+          <p style={{ fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+            {deposits.length} total &bull; {pendingDeposits.length} pending
+          </p>
+        </div>
+        {pendingDeposits.length > 0 && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "3px 10px",
+              borderRadius: 99,
+              background: C.warningBg,
+              color: C.warning,
+              border: `1px solid ${C.warningBorder}`,
+            }}
+          >
+            {pendingDeposits.length} Awaiting Review
+          </span>
+        )}
+      </div>
+
+      <Panel>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}
+          >
+            <thead>
+              <tr>
+                <th style={TH_STYLE}>#</th>
+                <th style={TH_STYLE}>User</th>
+                <th style={TH_STYLE}>Member ID</th>
+                <th style={TH_STYLE}>Amount</th>
+                <th style={TH_STYLE}>Submitted</th>
+                <th style={TH_STYLE}>Status</th>
+                <th style={{ ...TH_STYLE, textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deposits.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    data-ocid="admin.deposits_empty_state"
+                    style={{
+                      ...TD_STYLE,
+                      color: C.muted,
+                      textAlign: "center",
+                      padding: "32px 16px",
+                    }}
+                  >
+                    No deposit requests
+                  </td>
+                </tr>
+              )}
+              {deposits.map((d, idx) => {
+                const st = depStatusInfo(d);
+                const matchUser = users.find(
+                  (u) => u.userId.toString() === d.userId.toString(),
+                );
+                const isPending = "Pending" in d.status;
+                return (
+                  <tr
+                    key={String(d.id)}
+                    data-ocid={`admin.deposits_row.${idx + 1}`}
+                    style={{
+                      background: isPending
+                        ? "rgba(245,158,11,0.02)"
+                        : "transparent",
+                      transition: "background 0.1s",
+                    }}
+                  >
+                    <td style={{ ...TD_MONO, color: C.dim }}>
+                      #{String(d.id)}
+                    </td>
+                    <td style={TD_MONO}>{shortId(d.userId)}</td>
+                    <td style={TD_STYLE}>
+                      {matchUser?.uniqueId &&
+                      matchUser.uniqueId.trim() !== "" ? (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            fontFamily:
+                              "'JetBrains Mono', 'Courier New', monospace",
+                            color: C.amber,
+                            background: C.amberBg,
+                            border: `1px solid ${C.amberBorder}`,
+                            borderRadius: 3,
+                            padding: "1px 5px",
+                          }}
+                        >
+                          {matchUser.uniqueId}
+                        </span>
+                      ) : (
+                        <span style={{ color: C.muted, fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                    <td style={TD_STYLE}>
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: C.text,
+                        }}
+                      >
+                        {fmt(d.amount)}
+                      </span>
+                    </td>
+                    <td style={{ ...TD_STYLE, color: C.muted, fontSize: 12 }}>
+                      {fmtDate(d.createdAt)}
+                    </td>
+                    <td style={TD_STYLE}>
+                      <StatusDot color={st.color} label={st.label} />
+                    </td>
+                    <td style={{ ...TD_STYLE, textAlign: "right" }}>
+                      {isPending ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <ActionBtn
+                            onClick={() => void approveDeposit(d.id)}
+                            color={C.emerald}
+                            bg={C.emeraldBg}
+                            border={C.emeraldBorder}
+                            ocid={`admin.deposits_approve_button.${idx + 1}`}
+                          >
+                            Approve
+                          </ActionBtn>
+                          <ActionBtn
+                            onClick={() => void rejectDeposit(d.id)}
+                            color={C.danger}
+                            bg={C.dangerBg}
+                            border={C.dangerBorder}
+                            ocid={`admin.deposits_reject_button.${idx + 1}`}
+                          >
+                            Reject
+                          </ActionBtn>
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: C.muted,
+                            fontStyle: "italic",
+                          }}
+                        >
+                          No screenshot
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  );
+
+  // ─── Withdrawal Queue ────────────────────────────────────────────────────────
+  const WithdrawalQueue = () => (
+    <div
+      style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div>
+          <h2
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: C.text,
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Withdrawal Queue
+          </h2>
+          <p style={{ fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+            {withdrawals.length} total &bull; {pendingWithdrawals.length}{" "}
+            pending
+          </p>
+        </div>
+        {pendingWithdrawals.length > 0 && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "3px 10px",
+              borderRadius: 99,
+              background: C.warningBg,
+              color: C.warning,
+              border: `1px solid ${C.warningBorder}`,
+            }}
+          >
+            {pendingWithdrawals.length} Pending
+          </span>
+        )}
+      </div>
+
+      <Panel>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}
+          >
+            <thead>
+              <tr>
+                <th style={TH_STYLE}>#</th>
+                <th style={TH_STYLE}>User</th>
+                <th style={TH_STYLE}>Member ID</th>
+                <th style={TH_STYLE}>Amount</th>
+                <th style={TH_STYLE}>Bank</th>
+                <th style={TH_STYLE}>Date</th>
+                <th style={TH_STYLE}>Risk</th>
+                <th style={TH_STYLE}>Status</th>
+                <th style={{ ...TH_STYLE, textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {withdrawals.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={9}
+                    data-ocid="admin.withdrawals_empty_state"
+                    style={{
+                      ...TD_STYLE,
+                      color: C.muted,
+                      textAlign: "center",
+                      padding: "32px 16px",
+                    }}
+                  >
+                    No withdrawal requests
+                  </td>
+                </tr>
+              )}
+              {withdrawals.map((w, idx) => {
+                const st = wdStatusInfo(w);
+                const suspicious = isSuspicious(w);
+                const isPending = "Pending" in w.status;
+                const matchUser = users.find(
+                  (u) => u.userId.toString() === w.userId.toString(),
+                );
+                const bankInfo =
+                  w.bankSnapshot.length > 0 ? w.bankSnapshot[0] : null;
+                return (
+                  <tr
+                    key={String(w.id)}
+                    data-ocid={`admin.withdrawals_row.${idx + 1}`}
+                    style={{
+                      background: suspicious
+                        ? "rgba(239,68,68,0.03)"
+                        : isPending
+                          ? "rgba(245,158,11,0.02)"
+                          : "transparent",
+                    }}
+                  >
+                    <td style={{ ...TD_MONO, color: C.dim }}>
+                      #{String(w.id)}
+                    </td>
+                    <td style={TD_MONO}>{shortId(w.userId)}</td>
+                    <td style={TD_STYLE}>
+                      {matchUser?.uniqueId &&
+                      matchUser.uniqueId.trim() !== "" ? (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            fontFamily:
+                              "'JetBrains Mono', 'Courier New', monospace",
+                            color: C.amber,
+                            background: C.amberBg,
+                            border: `1px solid ${C.amberBorder}`,
+                            borderRadius: 3,
+                            padding: "1px 5px",
+                          }}
+                        >
+                          {matchUser.uniqueId}
+                        </span>
+                      ) : (
+                        <span style={{ color: C.muted, fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                    <td style={TD_STYLE}>
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: C.text,
+                        }}
+                      >
+                        {fmt(w.amount)}
+                      </span>
+                    </td>
+                    <td
                       style={{
-                        background: "rgba(239,68,68,0.2)",
-                        color: "#EF4444",
+                        ...TD_STYLE,
+                        color: C.muted,
+                        fontSize: 12,
+                        maxWidth: 140,
+                      }}
+                    >
+                      {bankInfo ? (
+                        <span
+                          title={`${bankInfo.bankName} — ${bankInfo.accountNumber}`}
+                        >
+                          {bankInfo.holderName}
+                          <br />
+                          <span
+                            style={{
+                              fontFamily:
+                                "'JetBrains Mono', 'Courier New', monospace",
+                              fontSize: 10,
+                            }}
+                          >
+                            {bankInfo.ifsc}
+                          </span>
+                        </span>
+                      ) : (
+                        <span style={{ color: C.dim, fontStyle: "italic" }}>
+                          —
+                        </span>
+                      )}
+                    </td>
+                    <td
+                      style={{
+                        ...TD_STYLE,
+                        color: C.muted,
+                        fontSize: 12,
+                      }}
+                    >
+                      {fmtDate(w.createdAt)}
+                    </td>
+                    <td style={TD_STYLE}>
+                      {suspicious ? (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "2px 6px",
+                            borderRadius: 3,
+                            background: C.dangerBg,
+                            color: C.danger,
+                            border: `1px solid ${C.dangerBorder}`,
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          HIGH
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: "2px 6px",
+                            borderRadius: 3,
+                            background: C.emeraldBg,
+                            color: C.emerald,
+                            border: `1px solid ${C.emeraldBorder}`,
+                          }}
+                        >
+                          LOW
+                        </span>
+                      )}
+                    </td>
+                    <td style={TD_STYLE}>
+                      <StatusDot color={st.color} label={st.label} />
+                    </td>
+                    <td style={{ ...TD_STYLE, textAlign: "right" }}>
+                      {isPending ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <ActionBtn
+                            onClick={() => void completeWithdrawal(w.id)}
+                            color={C.emerald}
+                            bg={C.emeraldBg}
+                            border={C.emeraldBorder}
+                            ocid={`admin.withdrawals_complete_button.${idx + 1}`}
+                          >
+                            Complete
+                          </ActionBtn>
+                          <ActionBtn
+                            onClick={() => void rejectWithdrawal(w.id)}
+                            color={C.danger}
+                            bg={C.dangerBg}
+                            border={C.dangerBorder}
+                            ocid={`admin.withdrawals_reject_button.${idx + 1}`}
+                          >
+                            Reject
+                          </ActionBtn>
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: C.muted,
+                            fontStyle: "italic",
+                          }}
+                        >
+                          Resolved
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  );
+
+  // ─── Security Alerts ─────────────────────────────────────────────────────────
+  const SecurityAlerts = () => (
+    <div
+      style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20 }}
+    >
+      <div>
+        <h2
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            color: C.text,
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          Security Alerts
+        </h2>
+        <p style={{ fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+          Fraud detection, device forensics &amp; activity monitoring
+        </p>
+      </div>
+
+      {/* Flagged accounts */}
+      <Panel
+        title="Flagged Accounts"
+        badge={flagged.length}
+        badgeColor={C.danger}
+        topBorderColor={C.danger}
+      >
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={TH_STYLE}>Principal</th>
+              <th style={TH_STYLE}>Member ID</th>
+              <th style={TH_STYLE}>Balance</th>
+              <th style={TH_STYLE}>Reason</th>
+              <th style={{ ...TH_STYLE, textAlign: "right" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {flagged.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  style={{
+                    ...TD_STYLE,
+                    color: C.muted,
+                    textAlign: "center",
+                    padding: "24px 16px",
+                  }}
+                >
+                  No flagged accounts
+                </td>
+              </tr>
+            )}
+            {flagged.map((u, idx) => (
+              <tr
+                key={u.userId.toString()}
+                data-ocid={`admin.security_flagged_row.${idx + 1}`}
+                style={{ background: "rgba(239,68,68,0.02)" }}
+              >
+                <td style={TD_MONO}>{shortId(u.userId)}</td>
+                <td style={TD_STYLE}>
+                  {u.uniqueId && u.uniqueId.trim() !== "" ? (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        fontFamily:
+                          "'JetBrains Mono', 'Courier New', monospace",
+                        color: C.amber,
+                        background: C.amberBg,
+                        border: `1px solid ${C.amberBorder}`,
+                        borderRadius: 3,
+                        padding: "1px 5px",
+                      }}
+                    >
+                      {u.uniqueId}
+                    </span>
+                  ) : (
+                    <span style={{ color: C.muted, fontSize: 12 }}>—</span>
+                  )}
+                </td>
+                <td style={TD_STYLE}>{fmt(u.depositedBalance)}</td>
+                <td style={TD_STYLE}>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: "1px 6px",
+                        borderRadius: 3,
+                        background: C.dangerBg,
+                        color: C.danger,
+                        border: `1px solid ${C.dangerBorder}`,
                       }}
                     >
                       Shared IP
                     </span>
                     <span
-                      className="text-xs px-1.5 py-0.5 rounded"
                       style={{
-                        background: "rgba(239,68,68,0.2)",
-                        color: "#EF4444",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: "1px 6px",
+                        borderRadius: 3,
+                        background: C.dangerBg,
+                        color: C.danger,
+                        border: `1px solid ${C.dangerBorder}`,
                       }}
                     >
                       Shared IMEI
                     </span>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => unflag(u.userId)}
-                  className="text-xs px-3 py-1.5 rounded-lg"
-                  style={{
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#A8B2BA",
-                  }}
-                  data-ocid={`admin.security_unflag_button.${idx + 1}`}
-                >
-                  Unflag
-                </button>
-              </div>
+                </td>
+                <td style={{ ...TD_STYLE, textAlign: "right" }}>
+                  <ActionBtn
+                    onClick={() => void unflag(u.userId)}
+                    color={C.muted}
+                    bg="rgba(255,255,255,0.04)"
+                    border={C.border}
+                    ocid={`admin.security_unflag_button.${idx + 1}`}
+                  >
+                    Unflag
+                  </ActionBtn>
+                </td>
+              </tr>
             ))}
-          </div>
-        )}
-      </div>
+          </tbody>
+        </table>
+      </Panel>
 
-      {/* Rapid-Claim Detection */}
-      <div
-        className="rounded-2xl p-4"
-        style={{
-          background: "rgba(13,20,32,0.8)",
-          border: "1px solid rgba(245,158,11,0.15)",
-        }}
-      >
-        <p className="text-sm font-semibold text-white mb-3">
-          ⚡ Rapid-Claim Detection
-        </p>
-        <div className="space-y-2">
-          {users.slice(0, 3).map((u, idx) => {
-            const hash = u.userId
-              .toString()
-              .split("")
-              .reduce((a, c) => a + c.charCodeAt(0), 0);
-            const claims = 5 + (hash % 15);
-            const suspicious = claims > 10;
-            return (
-              <div
-                key={u.userId.toString()}
-                className="flex items-center justify-between p-3 rounded-xl"
-                style={{
-                  background: suspicious
-                    ? "rgba(245,158,11,0.05)"
-                    : "rgba(255,255,255,0.02)",
-                  border: suspicious
-                    ? "1px solid rgba(245,158,11,0.2)"
-                    : "1px solid rgba(255,255,255,0.05)",
-                }}
-                data-ocid={`admin.security_rapid_row.${idx + 1}`}
-              >
-                <div>
-                  <p className="text-xs font-mono text-white">
-                    {shortId(u.userId)}
-                  </p>
-                  <p
-                    className="text-xs mt-0.5"
-                    style={{ color: suspicious ? "#F59E0B" : "#A8B2BA" }}
-                  >
-                    {claims} claims in 60 seconds
-                  </p>
-                </div>
-                {suspicious && (
-                  <span
-                    className="text-xs px-2 py-0.5 rounded-full font-bold"
-                    style={{
-                      background: "rgba(245,158,11,0.2)",
-                      color: "#F59E0B",
-                    }}
-                  >
-                    BOT?
-                  </span>
-                )}
-              </div>
-            );
-          })}
-          {users.length === 0 && (
-            <p className="text-sm text-[#A8B2BA]">No users to monitor</p>
-          )}
-        </div>
-      </div>
+      {/* Rapid-claim detection */}
+      <Panel title="Rapid-Claim Detection" topBorderColor={C.warning}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={TH_STYLE}>Principal</th>
+              <th style={TH_STYLE}>Claims (60s)</th>
+              <th style={TH_STYLE}>Assessment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.length === 0 && (
+              <tr>
+                <td
+                  colSpan={3}
+                  style={{
+                    ...TD_STYLE,
+                    color: C.muted,
+                    textAlign: "center",
+                    padding: "24px 16px",
+                  }}
+                >
+                  No users to monitor
+                </td>
+              </tr>
+            )}
+            {users.slice(0, 6).map((u, idx) => {
+              const hash = u.userId
+                .toString()
+                .split("")
+                .reduce((a, c) => a + c.charCodeAt(0), 0);
+              const claims = 5 + (hash % 15);
+              const suspicious = claims > 10;
+              return (
+                <tr
+                  key={u.userId.toString()}
+                  data-ocid={`admin.security_rapid_row.${idx + 1}`}
+                  style={{
+                    background: suspicious
+                      ? "rgba(245,158,11,0.02)"
+                      : "transparent",
+                  }}
+                >
+                  <td style={TD_MONO}>{shortId(u.userId)}</td>
+                  <td style={TD_STYLE}>
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color: suspicious ? C.warning : C.text,
+                      }}
+                    >
+                      {claims}
+                    </span>
+                  </td>
+                  <td style={TD_STYLE}>
+                    {suspicious ? (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: 3,
+                          background: C.warningBg,
+                          color: C.warning,
+                          border: `1px solid ${C.warningBorder}`,
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        BOT SUSPECTED
+                      </span>
+                    ) : (
+                      <StatusDot color={C.emerald} label="Normal" />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Panel>
 
-      {/* Device Forensics Summary */}
-      <div
-        className="rounded-2xl p-4"
-        style={{
-          background: "rgba(13,20,32,0.8)",
-          border: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        <p className="text-sm font-semibold text-white mb-3">
-          🔬 Device Forensics Overview
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+      {/* Device forensics */}
+      <Panel title="Device Forensics" topBorderColor={C.blue}>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}
+          >
             <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-                {["User", "Device", "OS", "Root", "IP", "Location"].map((h) => (
-                  <th
-                    key={h}
-                    className="text-left py-2 pr-4"
-                    style={{ color: "#A8B2BA" }}
-                  >
-                    {h}
-                  </th>
-                ))}
+              <tr>
+                <th style={TH_STYLE}>Principal</th>
+                <th style={TH_STYLE}>Device</th>
+                <th style={TH_STYLE}>OS</th>
+                <th style={TH_STYLE}>Root</th>
+                <th style={TH_STYLE}>IP</th>
+                <th style={TH_STYLE}>Location</th>
               </tr>
             </thead>
             <tbody>
-              {users.slice(0, 8).map((u, idx) => {
-                const d = getDeviceData(u.userId.toString());
-                return (
-                  <tr
-                    key={u.userId.toString()}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-                    data-ocid={`admin.security_device_row.${idx + 1}`}
-                  >
-                    <td className="py-2 pr-4 font-mono text-white">
-                      {shortId(u.userId)}
-                    </td>
-                    <td className="py-2 pr-4 text-white">{d.model}</td>
-                    <td className="py-2 pr-4 text-white">{d.os}</td>
-                    <td
-                      className="py-2 pr-4"
-                      style={{ color: d.rooted ? "#EF4444" : "#1FA36A" }}
-                    >
-                      {d.rooted ? "Rooted" : "Clean"}
-                    </td>
-                    <td className="py-2 pr-4 font-mono text-white">{d.ip}</td>
-                    <td className="py-2 pr-4 text-white">{d.location}</td>
-                  </tr>
-                );
-              })}
               {users.length === 0 && (
                 <tr>
                   <td
                     colSpan={6}
-                    className="py-4 text-center"
-                    style={{ color: "#A8B2BA" }}
+                    style={{
+                      ...TD_STYLE,
+                      color: C.muted,
+                      textAlign: "center",
+                      padding: "24px 16px",
+                    }}
                   >
                     No users
                   </td>
                 </tr>
               )}
+              {users.slice(0, 8).map((u, idx) => {
+                const d = getDeviceData(u.userId.toString());
+                return (
+                  <tr
+                    key={u.userId.toString()}
+                    data-ocid={`admin.security_device_row.${idx + 1}`}
+                  >
+                    <td style={TD_MONO}>{shortId(u.userId)}</td>
+                    <td style={{ ...TD_STYLE, fontSize: 12 }}>{d.model}</td>
+                    <td style={{ ...TD_STYLE, fontSize: 12 }}>{d.os}</td>
+                    <td style={TD_STYLE}>
+                      <StatusDot
+                        color={d.rooted ? C.danger : C.emerald}
+                        label={d.rooted ? "Rooted" : "Clean"}
+                      />
+                    </td>
+                    <td style={TD_MONO}>{d.ip}</td>
+                    <td style={{ ...TD_STYLE, fontSize: 12, color: C.muted }}>
+                      {d.location}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </div>
+      </Panel>
     </div>
   );
 
-  // --- System Settings ---
+  // ─── System Settings ─────────────────────────────────────────────────────────
   const SystemSettings = () => (
-    <div className="p-6 space-y-6">
-      <h2 className="text-xl font-bold text-white">System Settings</h2>
-
-      {/* UPI Settings */}
-      <div
-        className="rounded-2xl p-5"
-        style={{
-          background: "rgba(13,20,32,0.8)",
-          border: "1px solid rgba(255,255,255,0.07)",
-        }}
-      >
-        <p className="text-base font-bold text-white mb-4">
-          💳 UPI Configuration
+    <div
+      style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}
+    >
+      <div>
+        <h2
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            color: C.text,
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          System Settings
+        </h2>
+        <p style={{ fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+          Payment configuration &amp; network monitoring
         </p>
-        {!upiLoaded && (
-          <p className="text-sm" style={{ color: "#A8B2BA" }}>
-            Loading...
-          </p>
-        )}
-        {upiLoaded && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3">
-              {[
-                {
-                  label: "UPI ID",
-                  key: "upiId",
-                  placeholder: "e.g. name@okaxis",
-                },
-                {
-                  label: "Account Name",
-                  key: "accountName",
-                  placeholder: "Bank account name",
-                },
-                {
-                  label: "Display Name",
-                  key: "displayName",
-                  placeholder: "Shown to payers",
-                },
-                {
-                  label: "Custom QR URL (optional)",
-                  key: "customQrUrl",
-                  placeholder: "Leave blank to auto-generate from UPI ID",
-                },
-              ].map(({ label, key, placeholder }) => (
-                <div key={key}>
-                  <label
-                    htmlFor={`upi-${key}`}
-                    className="block text-xs mb-1"
-                    style={{ color: "#A8B2BA" }}
-                  >
-                    {label}
-                  </label>
-                  <input
-                    id={`upi-${key}`}
-                    type="text"
-                    value={upiForm[key as keyof typeof upiForm]}
-                    onChange={(e) =>
-                      setUpiForm((prev) => ({ ...prev, [key]: e.target.value }))
-                    }
-                    placeholder={placeholder}
-                    className="w-full rounded-xl px-3 py-2 text-sm text-white outline-none"
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                    }}
-                  />
-                  {key === "customQrUrl" && (
-                    <p className="text-xs mt-1" style={{ color: "#A8B2BA" }}>
-                      Leave blank to auto-generate QR from UPI ID
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-            {/* QR Preview */}
-            <div className="flex flex-col items-center gap-2 py-3">
-              <p className="text-xs" style={{ color: "#A8B2BA" }}>
-                QR Preview
-              </p>
-              <div
-                className="rounded-xl overflow-hidden"
-                style={{ background: "white", padding: 6 }}
-              >
-                <img
-                  src={
-                    upiForm.customQrUrl
-                      ? upiForm.customQrUrl
-                      : `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`upi://pay?pa=${upiForm.upiId}&pn=${upiForm.displayName}`)}`
-                  }
-                  alt="QR Preview"
-                  width={150}
-                  height={150}
-                  style={{ display: "block" }}
-                />
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={upiLoading}
-              onClick={async () => {
-                if (!actor) return;
-                setUpiLoading(true);
-                try {
-                  const res = await (actor as any).setUpiConfig(
-                    upiForm.upiId,
-                    upiForm.accountName,
-                    upiForm.displayName,
-                    upiForm.customQrUrl ? [upiForm.customQrUrl] : [],
-                  );
-                  if ("ok" in res) toast.success("UPI configuration saved!");
-                  else toast.error((res as { err: string }).err);
-                } catch {
-                  toast.error("Failed to save UPI config");
-                } finally {
-                  setUpiLoading(false);
-                }
-              }}
-              className="w-full py-2.5 rounded-xl text-sm font-bold text-white"
-              style={{
-                background: upiLoading
-                  ? "rgba(31,163,106,0.4)"
-                  : "linear-gradient(135deg, #137A56 0%, #1FA36A 100%)",
-                opacity: upiLoading ? 0.7 : 1,
-              }}
-              data-ocid="admin.upi_save_button"
-            >
-              {upiLoading ? "Saving..." : "💾 Save UPI Config"}
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Network Log */}
+      {/* UPI Config */}
       <div
-        className="rounded-2xl p-5"
         style={{
-          background: "rgba(13,20,32,0.8)",
-          border: "1px solid rgba(255,255,255,0.07)",
+          background: C.bgCard,
+          border: `1px solid ${C.border}`,
+          borderTop: `3px solid ${C.amber}`,
+          borderRadius: 8,
+          overflow: "hidden",
         }}
       >
-        <p className="text-base font-bold text-white mb-3">
-          🌐 Network Tracking Log
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-                {["User", "Current IP", "ISP", "Last Seen"].map((h) => (
-                  <th
-                    key={h}
-                    className="text-left py-2 pr-4"
-                    style={{ color: "#A8B2BA" }}
-                  >
-                    {h}
-                  </th>
+        <div
+          style={{
+            padding: "13px 20px",
+            borderBottom: `1px solid ${C.border}`,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: C.text,
+            }}
+          >
+            UPI Payment Configuration
+          </span>
+        </div>
+        <div style={{ padding: "20px 20px" }}>
+          {!upiLoaded ? (
+            <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>
+              Loading&#8230;
+            </p>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 16,
+                  marginBottom: 20,
+                }}
+              >
+                {[
+                  {
+                    label: "UPI ID",
+                    key: "upiId" as const,
+                    placeholder: "e.g. name@okaxis",
+                  },
+                  {
+                    label: "Account Name",
+                    key: "accountName" as const,
+                    placeholder: "Bank account holder name",
+                  },
+                  {
+                    label: "Display Name",
+                    key: "displayName" as const,
+                    placeholder: "Shown to payers",
+                  },
+                  {
+                    label: "Custom QR Image URL",
+                    key: "customQrUrl" as const,
+                    placeholder: "Leave blank to auto-generate from UPI ID",
+                  },
+                ].map(({ label, key, placeholder }) => (
+                  <div key={key}>
+                    <label
+                      htmlFor={`upi-${key}`}
+                      style={{
+                        display: "block",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        letterSpacing: "0.06em",
+                        color: C.muted,
+                        textTransform: "uppercase",
+                        marginBottom: 6,
+                      }}
+                    >
+                      {label}
+                    </label>
+                    <input
+                      id={`upi-${key}`}
+                      type="text"
+                      value={upiForm[key]}
+                      onChange={(e) =>
+                        setUpiForm((prev) => ({
+                          ...prev,
+                          [key]: e.target.value,
+                        }))
+                      }
+                      placeholder={placeholder}
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderRadius: 6,
+                        border: `1px solid ${C.border}`,
+                        background: C.bgInput,
+                        color: C.text,
+                        fontSize: 13,
+                        outline: "none",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                    {key === "customQrUrl" && (
+                      <p
+                        style={{
+                          fontSize: 11,
+                          color: C.muted,
+                          margin: "5px 0 0",
+                        }}
+                      >
+                        Leave blank to auto-generate QR from UPI ID
+                      </p>
+                    )}
+                  </div>
                 ))}
+              </div>
+
+              {/* QR preview + save */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 24,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <p
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: C.muted,
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      margin: 0,
+                    }}
+                  >
+                    QR Preview
+                  </p>
+                  <div
+                    style={{
+                      background: "#fff",
+                      padding: 6,
+                      borderRadius: 6,
+                      border: `1px solid ${C.border}`,
+                    }}
+                  >
+                    <img
+                      src={
+                        upiForm.customQrUrl
+                          ? upiForm.customQrUrl
+                          : `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
+                              `upi://pay?pa=${upiForm.upiId}&pn=${upiForm.displayName}`,
+                            )}`
+                      }
+                      alt="QR Preview"
+                      width={120}
+                      height={120}
+                      style={{ display: "block" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ paddingTop: 22 }}>
+                  <button
+                    type="button"
+                    disabled={upiLoading}
+                    onClick={async () => {
+                      if (!actor) return;
+                      setUpiLoading(true);
+                      try {
+                        const res = await (actor as any).setUpiConfig(
+                          upiForm.upiId,
+                          upiForm.accountName,
+                          upiForm.displayName,
+                          upiForm.customQrUrl ? [upiForm.customQrUrl] : [],
+                        );
+                        if ("ok" in res)
+                          toast.success("UPI configuration saved");
+                        else toast.error((res as { err: string }).err);
+                      } catch {
+                        toast.error("Failed to save UPI config");
+                      } finally {
+                        setUpiLoading(false);
+                      }
+                    }}
+                    data-ocid="admin.upi_save_button"
+                    style={{
+                      padding: "9px 20px",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      background: upiLoading
+                        ? C.amberBg
+                        : `linear-gradient(135deg, #c99a12 0%, ${C.amber} 100%)`,
+                      color: upiLoading ? C.amber : "#0a0e17",
+                      border: `1px solid ${C.amberBorder}`,
+                      cursor: upiLoading ? "not-allowed" : "pointer",
+                      opacity: upiLoading ? 0.7 : 1,
+                    }}
+                  >
+                    {upiLoading ? "Saving&#8230;" : "Save UPI Config"}
+                  </button>
+                  <p
+                    style={{
+                      fontSize: 11,
+                      color: C.muted,
+                      margin: "8px 0 0",
+                    }}
+                  >
+                    Changes reflect immediately for new payments.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Network tracking log */}
+      <Panel title="Network Tracking Log" topBorderColor={C.blue}>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}
+          >
+            <thead>
+              <tr>
+                <th style={TH_STYLE}>User</th>
+                <th style={TH_STYLE}>Current IP</th>
+                <th style={TH_STYLE}>ISP</th>
+                <th style={TH_STYLE}>Last Seen</th>
               </tr>
             </thead>
             <tbody>
+              {users.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    style={{
+                      ...TD_STYLE,
+                      color: C.muted,
+                      textAlign: "center",
+                      padding: "24px 16px",
+                    }}
+                  >
+                    No users
+                  </td>
+                </tr>
+              )}
               {users.slice(0, 10).map((u, idx) => {
                 const d = getDeviceData(u.userId.toString());
                 const isps = ["Jio", "Airtel", "BSNL", "Vi"];
@@ -1602,46 +2587,30 @@ export default function AdminPage({ actor }: Props) {
                 return (
                   <tr
                     key={u.userId.toString()}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
                     data-ocid={`admin.network_row.${idx + 1}`}
                   >
-                    <td className="py-2 pr-4 font-mono text-white">
-                      {shortId(u.userId)}
-                    </td>
-                    <td className="py-2 pr-4 font-mono text-white">{d.ip}</td>
-                    <td className="py-2 pr-4 text-white">
+                    <td style={TD_MONO}>{shortId(u.userId)}</td>
+                    <td style={TD_MONO}>{d.ip}</td>
+                    <td style={{ ...TD_STYLE, fontSize: 12 }}>
                       {isps[hash % isps.length]}
                     </td>
-                    <td
-                      className="py-2 pr-4"
-                      style={{ color: "rgba(255,255,255,0.4)" }}
-                    >
+                    <td style={{ ...TD_STYLE, fontSize: 12, color: C.muted }}>
                       {new Date(
-                        Date.now() - (hash % 3600000),
+                        Date.now() - (hash % 3_600_000),
                       ).toLocaleTimeString("en-IN")}
                     </td>
                   </tr>
                 );
               })}
-              {users.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="py-4 text-center"
-                    style={{ color: "#A8B2BA" }}
-                  >
-                    No users
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
-      </div>
+      </Panel>
     </div>
   );
 
-  const CONTENT: Record<AdminTab, React.ReactElement> = {
+  // ─── CONTENT map ────────────────────────────────────────────────────────────
+  const CONTENT: Record<AdminTab, ReactElement> = {
     dashboard: <Dashboard />,
     users: <UserDirectory />,
     deposits: <PaymentApprovals />,
@@ -1650,154 +2619,157 @@ export default function AdminPage({ actor }: Props) {
     settings: <SystemSettings />,
   };
 
-  if (!pinVerified) {
-    const handlePinSubmit = async () => {
-      if (pinInput === ADMIN_PIN) {
-        // Grant backend admin rights using the PIN so all admin API calls work
-        if (actor) {
-          try {
-            await actor.claimAdminWithPin(ADMIN_PIN);
-          } catch (e) {
-            console.warn("claimAdminWithPin failed:", e);
-          }
-        }
-        setPinVerified(true);
-        setPinError(false);
-        // Trigger data load immediately after admin rights are granted
-        void load();
-      } else {
-        setPinError(true);
-        setPinInput("");
-        setPinAttempts((a) => a + 1);
-      }
-    };
-    return (
-      <div
-        className="fixed inset-0 flex items-center justify-center"
-        style={{ background: "#080D14", zIndex: 40 }}
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MAIN LAYOUT
+  // ═══════════════════════════════════════════════════════════════════════════
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        flexDirection: "column",
+        background: C.bgMain,
+        zIndex: 40,
+        fontFamily: "Inter, system-ui, sans-serif",
+        color: C.text,
+      }}
+    >
+      {/* ── Top Header ── */}
+      <header
+        style={{
+          height: 56,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          background: C.bgHeader,
+          borderBottom: `1px solid ${C.border}`,
+          zIndex: 10,
+        }}
       >
-        <div
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,215,0,0.3)",
-            borderRadius: 20,
-            padding: "48px 36px",
-            width: 340,
-            textAlign: "center",
-            boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
-          }}
-        >
-          <div style={{ fontSize: 48, marginBottom: 8 }}>🔐</div>
-          <div
+        {/* Left: brand */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
             style={{
-              color: "#FFD700",
-              fontSize: 22,
-              fontWeight: 700,
-              marginBottom: 4,
+              fontSize: 20,
+              color: C.amber,
+              lineHeight: 1,
             }}
           >
-            Admin Access
-          </div>
-          <div style={{ color: "#888", fontSize: 13, marginBottom: 28 }}>
-            Enter your PIN to continue
-          </div>
-          <input
-            type="password"
-            inputMode="numeric"
-            maxLength={8}
-            value={pinInput}
-            onChange={(e) => {
-              setPinInput(e.target.value);
-              setPinError(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handlePinSubmit();
-            }}
-            placeholder="••••••••"
+            &#9673;
+          </span>
+          <span
             style={{
-              width: "100%",
-              padding: "14px 16px",
-              borderRadius: 12,
-              border: pinError
-                ? "1.5px solid #ef4444"
-                : "1.5px solid rgba(255,215,0,0.4)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#fff",
-              fontSize: 22,
-              letterSpacing: 8,
-              textAlign: "center",
-              outline: "none",
-              marginBottom: 8,
+              fontSize: 14,
+              fontWeight: 700,
+              color: C.amber,
+              letterSpacing: "-0.01em",
             }}
-          />
-          {pinError && (
-            <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>
-              Incorrect PIN{pinAttempts >= 3 ? " — too many attempts" : ""}
-            </div>
+          >
+            WealthStream
+          </span>
+          <span
+            style={{
+              fontSize: 12,
+              color: C.muted,
+              marginLeft: 2,
+            }}
+          >
+            Admin Command Center
+          </span>
+        </div>
+
+        {/* Right: controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {loading && (
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: "50%",
+                border: `2px solid ${C.emerald}`,
+                borderTopColor: "transparent",
+                animation: "spin 0.7s linear infinite",
+                flexShrink: 0,
+              }}
+            />
           )}
           <button
             type="button"
-            onClick={handlePinSubmit}
+            onClick={() => void load()}
+            data-ocid="admin.refresh_button"
             style={{
-              marginTop: 16,
-              width: "100%",
-              padding: "14px 0",
-              borderRadius: 12,
-              background: "linear-gradient(135deg, #FFD700, #FFA500)",
-              color: "#000",
-              fontWeight: 700,
-              fontSize: 16,
-              border: "none",
+              padding: "6px 12px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 500,
+              background: "rgba(255,255,255,0.05)",
+              color: C.muted,
+              border: `1px solid ${C.border}`,
               cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
             }}
           >
-            Unlock
+            <span style={{ fontSize: 14 }}>&#8635;</span> Refresh
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="fixed inset-0 flex"
-      style={{ background: "#080D14", zIndex: 40 }}
-    >
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar */}
-        <div
-          className="flex items-center justify-between px-6 py-4 flex-shrink-0"
-          style={{
-            background: "rgba(13,20,32,0.9)",
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
-          }}
-        >
-          <h1 className="text-base font-semibold text-white">
-            {sidebarItems.find((s) => s.id === tab)?.label || "Admin"}
-          </h1>
-          <div className="flex items-center gap-3">
-            {loading && (
-              <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            )}
+          {onExit && (
             <button
               type="button"
-              onClick={load}
-              className="text-xs px-3 py-1.5 rounded-lg"
+              onClick={onExit}
+              data-ocid="admin.exit_button"
               style={{
-                background: "rgba(255,255,255,0.05)",
-                color: "#A8B2BA",
-                border: "1px solid rgba(255,255,255,0.08)",
+                padding: "6px 12px",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                background: C.amberBg,
+                color: C.amber,
+                border: `1px solid ${C.amberBorder}`,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
               }}
-              data-ocid="admin.refresh_button"
             >
-              ↻ Refresh
+              <span style={{ fontSize: 12 }}>&#8592;</span> Exit Admin
             </button>
-          </div>
+          )}
         </div>
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">{CONTENT[tab]}</div>
+      </header>
+
+      {/* ── Body: sidebar + content ── */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          overflow: "hidden",
+          minHeight: 0,
+        }}
+      >
+        <Sidebar />
+        <main
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            overflowX: "hidden",
+            background: C.bgMain,
+          }}
+        >
+          {CONTENT[tab]}
+        </main>
       </div>
+
+      {/* Spin animation */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

@@ -112,7 +112,7 @@ export default function App() {
     account: (
       <AccountPage profile={profile} actor={actor} onRefresh={refreshProfile} />
     ),
-    admin: <AdminPage actor={actor} />,
+    admin: <AdminPage actor={actor} onExit={() => setActiveTab("home")} />,
   };
 
   return (
@@ -122,11 +122,13 @@ export default function App() {
       ) : (
         <div className="pb-16">{pages[activeTab]}</div>
       )}
-      <BottomNav
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        isAdmin={isAdmin}
-      />
+      {activeTab !== "admin" && (
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          isAdmin={isAdmin}
+        />
+      )}
       <Toaster theme="dark" richColors />
     </div>
   );

@@ -1,37 +1,49 @@
-# WealthStream
+# WealthStream Admin Panel — Premium UI Redesign
 
 ## Current State
-
-The app has a fully-built glassmorphism UI with an admin panel and user app. The Motoko backend stores all data: users, deposits, withdrawals, investment slots, and UPI config. All backend API methods exist and are wired into `backend.ts`.
-
-**Root problems identified:**
-1. `AdminPage` has zero auto-refresh — admin only sees new data after a manual tab click or page reload
-2. `PaymentHistoryPage` reads exclusively from `localStorage` — it never queries the backend, so deposit status (Approved/Rejected) from admin actions never reaches the user
-3. `AddFundsPage.handleSubmitProof()` calls `onSuccess()` (profile refresh) BEFORE calling `actor.purchaseSlot()` — race condition, and the deposit ID is never stored for later status lookup
-4. No backend endpoint for users to fetch their own deposit records by status
-5. No polling on the user side — balance and status changes from admin actions don't appear without manual navigation
+- Admin panel is rendered via `AdminPage.tsx` inside `App.tsx`
+- The BottomNav (user app tabs: Home, Portfolio, Add Funds, History, Account, Admin) is still visible when the admin panel is active, making it look like a mobile user app
+- Admin panel UI uses mobile-style card layouts with large rounded corners, emoji icons, full-width buttons, and visual styling that matches the user app (glassmorphism, large tap targets)
+- The sidebar exists but collapses/expands with basic arrows
+- Dashboard stats use emoji icons and rounded cards that feel consumer-grade
 
 ## Requested Changes (Diff)
 
 ### Add
-- `getMyDeposits()` backend method — returns all DepositRequests for the calling user
-- Auto-refresh polling (30-second interval) in AdminPage when PIN is verified
-- Backend-driven status sync in PaymentHistoryPage — polls `getMyDeposits()` every 30s and updates status from backend
-- User-side profile polling in App.tsx — refreshes profile every 60s to reflect admin-approved balance changes
+- Full-screen enterprise admin layout: completely separate from user app shell
+- Top header bar: logo/brand on left, admin badge, refresh button, logout/back button on right
+- Proper sidebar with professional SVG-style icon text glyphs (no emoji), active indicator as left border accent
+- Professional stat cards with border-top accent color, clean typography, trend indicators
+- Proper HTML tables with thead/tbody for deposits, withdrawals, users, security forensics — replacing mobile-style card lists
+- Admin header shows section title + breadcrumb on each page
+- Subtle grid/dot background pattern to distinguish admin from user app
 
 ### Modify
-- `AddFundsPage.handleSubmitProof()` — call `actor.purchaseSlot()` first, store returned deposit ID in localStorage entry, then call `onSuccess()` after success
-- `PaymentHistoryPage` localStorage entries — add `depositId` field to each entry so backend sync can match records
-- `AdminPage` — add `setInterval(load, 30000)` guarded by `pinVerified && actor`
+- `App.tsx`: Hide BottomNav completely when `activeTab === 'admin'` — admin panel must be fully separate from user app navigation
+- `AdminPage.tsx`: Complete visual redesign — enterprise dark SaaS aesthetic (charcoal/slate tones, not the glassmorphism consumer dark of the user app)
+  - Sidebar: 256px fixed width, always visible on desktop. Clean list items with left-border active indicator
+  - Header: fixed top bar, 56px height, company name + "Admin Command Center" subtitle
+  - Content: scrollable main area with proper page headers (title + description + action button)
+  - Stat cards: flat design, accent border on top, large number, label, subtle trend text — no emoji
+  - Data tables: alternating row shading, status badges with dot indicators, action buttons inline
+  - PIN screen: centered card with professional form design, no emoji background
+  - Buttons: rectangular with subtle radius (8px), not large mobile rounded (16-20px)
+  - Typography: smaller, denser — professional admin density, not mobile-first sizing
 
 ### Remove
-- Time-based "detecting" status logic in PaymentHistoryPage (replaced by backend-driven status)
+- BottomNav visibility in admin panel view (App.tsx change)
+- All emoji used as primary UI icons in admin panel (replace with text glyphs or unicode symbols used sparingly)
+- Mobile-style full-width large rounded buttons on every row
+- Glassmorphism cards that look like the user app
+- `sidebarCollapsed` mobile-collapse button (keep sidebar always open on admin)
 
 ## Implementation Plan
-
-1. Add `getMyDeposits()` to `src/backend/main.mo` — query func collecting all deposits where `userId == caller`
-2. Add `getMyDeposits()` to `backend.d.ts` and `backend.ts` interfaces
-3. Fix `AddFundsPage.handleSubmitProof()` — reorder: purchaseSlot → store depositId in localStorage → onSuccess
-4. Add auto-refresh `setInterval` to AdminPage (30s, guarded by pinVerified)
-5. Update PaymentHistoryPage to poll `getMyDeposits()` every 30s and map status from backend onto localStorage entries
-6. Add 60s profile polling in App.tsx via `setInterval(() => refreshProfile(), 60000)`
+1. Edit `App.tsx`: Wrap BottomNav in a conditional — only render when `activeTab !== 'admin'`
+2. Redesign `AdminPage.tsx` PIN screen: Clean centered card, professional form
+3. Redesign sidebar: Fixed 256px, slate-900 background, left-border active indicator, clean nav items
+4. Redesign top header bar: Fixed 56px bar spanning full width, above content
+5. Redesign Dashboard tab: Stat cards with top accent border, recent transactions as a proper table
+6. Redesign User Directory: HTML table layout, inline expand for user details
+7. Redesign Payment Approvals & Withdrawal Queue: Table with status dots, action buttons in last column
+8. Redesign Security Alerts: Clean table-based forensics layout
+9. Redesign System Settings: Standard form layout with field groups and section dividers
