@@ -72,6 +72,7 @@ export interface backendInterface {
     _initializeAccessControlWithSecret(secret: string): Promise<void>;
     getCallerUserRole(): Promise<any>;
     isCallerAdmin(): Promise<boolean>;
+    claimAdminWithPin(pin: string): Promise<{ ok: string } | { err: string }>;
 }
 
 export class Backend implements backendInterface {
@@ -122,6 +123,7 @@ export class Backend implements backendInterface {
     }
     getCallerUserRole() { return this.call(() => this.actor.getCallerUserRole()); }
     isCallerAdmin() { return this.call(() => this.actor.isCallerAdmin()); }
+    claimAdminWithPin(pin: string) { return this.call(() => this.actor.claimAdminWithPin(pin)); }
 }
 
 export interface CreateActorOptions {

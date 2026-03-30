@@ -105,4 +105,5 @@ export interface backendInterface {
     _initializeAccessControlWithSecret(secret: string): Promise<void>;
     getCallerUserRole(): Promise<UserRole>;
     isCallerAdmin(): Promise<boolean>;
+    claimAdminWithPin(pin: string): Promise<{ ok: string } | { err: string }>;
 }

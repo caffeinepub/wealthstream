@@ -110,6 +110,7 @@ export interface _SERVICE {
   _initializeAccessControlWithSecret: ActorMethod<[string], undefined>;
   getCallerUserRole: ActorMethod<[], UserRole>;
   isCallerAdmin: ActorMethod<[], boolean>;
+  claimAdminWithPin: ActorMethod<[string], { ok: string } | { err: string }>;
 }
 
 export declare const idlService: IDL.ServiceClass;

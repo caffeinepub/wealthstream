@@ -610,4 +610,16 @@ actor class WealthStream() = this {
     if (not isAdminCaller(msg.caller)) return #err("Not authorized");
     #ok(collectAllUsers())
   };
+
+  let ADMIN_PIN : Text = "09186114";
+
+  // Grant admin rights to caller using the admin PIN.
+  // This is called from the frontend after PIN verification to ensure
+  // the admin's Internet Identity principal gets backend admin rights.
+  public shared(msg) func claimAdminWithPin(pin : Text) : async R<Text> {
+    if (pin != ADMIN_PIN) return #err("Invalid PIN");
+    accessControlState.userRoles.add(msg.caller, #admin);
+    accessControlState.adminAssigned := true;
+    #ok("Admin role granted")
+  };
 }

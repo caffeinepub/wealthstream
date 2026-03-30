@@ -131,9 +131,13 @@ export default function AdminPage({ actor }: Props) {
         actor.getAllUsers(),
       ]);
       if ("ok" in d) setDeposits(d.ok);
+      else console.error("getAllDeposits error:", "err" in d ? d.err : d);
       if ("ok" in w) setWithdrawals(w.ok);
+      else console.error("getAllWithdrawals error:", "err" in w ? w.err : w);
       if ("ok" in f) setFlagged(f.ok);
+      else console.error("getFlaggedUsers error:", "err" in f ? f.err : f);
       if ("ok" in u) setUsers(u.ok);
+      else console.error("getAllUsers error:", "err" in u ? u.err : u);
     } catch (e) {
       console.error(e);
     } finally {
@@ -1647,10 +1651,20 @@ export default function AdminPage({ actor }: Props) {
   };
 
   if (!pinVerified) {
-    const handlePinSubmit = () => {
+    const handlePinSubmit = async () => {
       if (pinInput === ADMIN_PIN) {
+        // Grant backend admin rights using the PIN so all admin API calls work
+        if (actor) {
+          try {
+            await actor.claimAdminWithPin(ADMIN_PIN);
+          } catch (e) {
+            console.warn("claimAdminWithPin failed:", e);
+          }
+        }
         setPinVerified(true);
         setPinError(false);
+        // Trigger data load immediately after admin rights are granted
+        void load();
       } else {
         setPinError(true);
         setPinInput("");

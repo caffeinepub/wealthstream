@@ -133,6 +133,7 @@ const serviceDefinition = {
   _initializeAccessControlWithSecret: IDL.Func([IDL.Text], [], []),
   getCallerUserRole: IDL.Func([], [UserRole], []),
   isCallerAdmin: IDL.Func([], [IDL.Bool], []),
+  claimAdminWithPin: IDL.Func([IDL.Text], [IDL.Variant({'ok': IDL.Text, 'err': IDL.Text})], []),
 };
 
 export const idlService = IDL.Service(serviceDefinition);
@@ -256,6 +257,7 @@ export const idlFactory = ({ IDL }) => {
     _initializeAccessControlWithSecret: IDL.Func([IDL.Text], [], []),
     getCallerUserRole: IDL.Func([], [UserRole], []),
     isCallerAdmin: IDL.Func([], [IDL.Bool], []),
+  claimAdminWithPin: IDL.Func([IDL.Text], [IDL.Variant({'ok': IDL.Text, 'err': IDL.Text})], []),
   });
 };
 
