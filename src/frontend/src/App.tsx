@@ -22,46 +22,6 @@ export type TabName =
   | "account"
   | "admin";
 
-function MaintenanceOverlay() {
-  return (
-    <div
-      className="fixed inset-0 flex flex-col items-center justify-center px-6 z-50"
-      style={{ background: "#0B1220" }}
-    >
-      <div
-        className="text-center max-w-sm"
-        style={{ animation: "fadeIn 0.5s ease" }}
-      >
-        <div
-          className="text-7xl mb-6"
-          style={{ animation: "spin 4s linear infinite" }}
-        >
-          🔧
-        </div>
-        <h1 className="text-3xl font-bold text-white mb-3">
-          Under Maintenance
-        </h1>
-        <p className="text-base" style={{ color: "#A8B2BA", lineHeight: 1.6 }}>
-          We're upgrading WealthStream for a better experience. Please check
-          back shortly.
-        </p>
-        <div className="mt-8 flex justify-center gap-2">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="w-2 h-2 rounded-full"
-              style={{
-                background: "#1FA36A",
-                animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
-              }}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const { identity, isInitializing } = useInternetIdentity();
   const { actor: _actor } = useActor();
@@ -71,7 +31,6 @@ export default function App() {
   );
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isAdminChecked, setIsAdminChecked] = useState(false);
   const [serverOffset, setServerOffset] = useState(0);
 
   // Auto-navigate to admin tab if URL hash contains the admin PIN
@@ -82,13 +41,6 @@ export default function App() {
       setActiveTab("admin");
     }
   }, [identity]);
-
-  const maintenanceMode = localStorage.getItem("maintenanceMode") === "true";
-  // Admin can always bypass maintenance — either via URL hash or confirmed isAdmin
-  const isAdminAccess =
-    activeTab === "admin" ||
-    window.location.hash.includes("admin=09186114") ||
-    isAdmin;
 
   const refreshProfile = useCallback(async () => {
     if (!actor || !identity) return;
@@ -107,11 +59,9 @@ export default function App() {
       .isCallerAdmin()
       .then((v) => {
         setIsAdmin(v);
-        setIsAdminChecked(true);
       })
       .catch(() => {
         setIsAdmin(false);
-        setIsAdminChecked(true);
       });
     actor
       .getServerTime()
@@ -120,6 +70,14 @@ export default function App() {
         setServerOffset(offset);
       })
       .catch(() => {});
+  }, [actor, identity, refreshProfile]);
+
+  // Auto-refresh user profile every 60s so balance/status updates from admin actions
+  // appear without requiring manual navigation
+  useEffect(() => {
+    if (!actor || !identity) return;
+    const id = setInterval(() => void refreshProfile(), 60_000);
+    return () => clearInterval(id);
   }, [actor, identity, refreshProfile]);
 
   if (isInitializing) {
@@ -139,30 +97,6 @@ export default function App() {
     );
   }
 
-  // Only show maintenance spinner/screen for non-admin users
-  if (
-    !isAdminAccess &&
-    maintenanceMode &&
-    !isAdminChecked &&
-    identity &&
-    !identity.getPrincipal().isAnonymous()
-  ) {
-    return (
-      <div className="min-h-screen bg-[#0B1220] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!isAdminAccess && maintenanceMode && isAdminChecked && !isAdmin) {
-    return (
-      <>
-        <MaintenanceOverlay />
-        <Toaster theme="dark" richColors />
-      </>
-    );
-  }
-
   const pages: Record<TabName, ReactElement> = {
     home: (
       <HomePage
@@ -174,7 +108,7 @@ export default function App() {
     ),
     portfolio: <PortfolioPage profile={profile} actor={actor} />,
     addfunds: <AddFundsPage actor={actor} onSuccess={refreshProfile} />,
-    history: <PaymentHistoryPage />,
+    history: <PaymentHistoryPage actor={actor} />,
     account: (
       <AccountPage profile={profile} actor={actor} onRefresh={refreshProfile} />
     ),

@@ -22,6 +22,7 @@ function savePaymentHistory(entry: {
   screenshotName: string;
   submittedAt: number;
   status: "detecting";
+  depositId?: number;
 }) {
   try {
     const existing = JSON.parse(
@@ -107,7 +108,22 @@ export default function AddFundsPage({ actor, onSuccess }: Props) {
       toast.error("Please enter a valid UTR number (at least 8 digits)");
       return;
     }
-    // Save to payment history localStorage
+    // First: write to backend so admin sees it immediately
+    let depositId: number | undefined;
+    if (actor && selected) {
+      try {
+        setLoading(true);
+        const result = await actor.purchaseSlot(BigInt(selected), true);
+        if ("ok" in result) {
+          depositId = Number(result.ok);
+        }
+      } catch {
+        // Silent - continue so user sees the timer
+      } finally {
+        setLoading(false);
+      }
+    }
+    // Save to payment history localStorage (with depositId for status sync)
     const now = Date.now();
     savePaymentHistory({
       id: now,
@@ -116,24 +132,15 @@ export default function AddFundsPage({ actor, onSuccess }: Props) {
       screenshotName: screenshot?.name || "",
       submittedAt: now,
       status: "detecting",
+      depositId,
     });
-    // Show timer immediately (optimistic) - always runs
+    // Show detecting timer
     setStep("detecting");
+    // Refresh user profile balance
     try {
       await onSuccess();
     } catch {
       // ignore
-    }
-    // Fire backend in background (non-blocking for UX)
-    if (actor && selected) {
-      try {
-        setLoading(true);
-        await actor.purchaseSlot(BigInt(selected), true);
-      } catch {
-        // Silent - admin will review the submission
-      } finally {
-        setLoading(false);
-      }
     }
   };
 

@@ -265,6 +265,16 @@ actor class WealthStream() = this {
     result
   };
 
+  func collectMyDeposits(caller : Principal) : [DepositRequest] {
+    var result : [DepositRequest] = [];
+    for ((_, d) in deposits.entries()) {
+      if (Principal.equal(d.userId, caller)) {
+        result := result.concat([d]);
+      };
+    };
+    result
+  };
+
   func collectPendingDeposits() : [DepositRequest] {
     var result : [DepositRequest] = [];
     for ((_, d) in deposits.entries()) {
@@ -478,6 +488,10 @@ actor class WealthStream() = this {
 
   public shared(msg) func getMyWithdrawals() : async [WithdrawalRequest] {
     collectWithdrawals(msg.caller)
+  };
+
+  public shared(msg) func getMyDeposits() : async [DepositRequest] {
+    collectMyDeposits(msg.caller)
   };
 
   public shared(msg) func getBankDetails() : async ?BankDetails {

@@ -68,6 +68,7 @@ export interface backendInterface {
     addFunds(target: Principal, amount: bigint): Promise<{ ok: string } | { err: string }>;
     getAllWithdrawals(): Promise<{ ok: any[] } | { err: string }>;
     getAllUsers(): Promise<{ ok: any[] } | { err: string }>;
+    getMyDeposits(): Promise<any[]>;
     _initializeAccessControlWithSecret(secret: string): Promise<void>;
     getCallerUserRole(): Promise<any>;
     isCallerAdmin(): Promise<boolean>;
@@ -115,6 +116,7 @@ export class Backend implements backendInterface {
     addFunds(target: Principal, amount: bigint) { return this.call(() => this.actor.addFunds(target, amount)); }
     getAllWithdrawals() { return this.call(() => this.actor.getAllWithdrawals()); }
     getAllUsers() { return this.call(() => this.actor.getAllUsers()); }
+    getMyDeposits(): Promise<any[]> { return this.call(() => (this.actor as any).getMyDeposits()); }
     _initializeAccessControlWithSecret(secret: string) {
         return this.call(() => this.actor._initializeAccessControlWithSecret(secret));
     }

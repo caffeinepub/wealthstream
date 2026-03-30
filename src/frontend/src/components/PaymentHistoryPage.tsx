@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { WealthActor } from "../actorTypes";
 
 interface PaymentEntry {
   id: number;
@@ -7,13 +8,23 @@ interface PaymentEntry {
   screenshotName: string;
   submittedAt: number;
   status: "detecting" | "verifying" | "approved" | "rejected";
+  depositId?: number;
+}
+
+interface Props {
+  actor: WealthActor | null;
 }
 
 function getEffectiveStatus(
   entry: PaymentEntry,
 ): "detecting" | "verifying" | "approved" | "rejected" {
+  // If backend confirmed approved/rejected, use that
+  if (entry.status === "approved" || entry.status === "rejected") {
+    return entry.status;
+  }
+  // Within first 5 minutes: detecting
   if (Date.now() - entry.submittedAt < 5 * 60 * 1000) return "detecting";
-  return entry.status === "detecting" ? "verifying" : entry.status;
+  return "verifying";
 }
 
 function formatDate(ts: number): string {
@@ -59,9 +70,8 @@ const STATUS_CONFIG = {
   },
 };
 
-export default function PaymentHistoryPage() {
+export default function PaymentHistoryPage({ actor }: Props) {
   const [history, setHistory] = useState<PaymentEntry[]>([]);
-  const [, setTick] = useState(0);
 
   const loadHistory = useCallback(() => {
     try {
@@ -73,14 +83,68 @@ export default function PaymentHistoryPage() {
     }
   }, []);
 
+  // Sync backend deposit status into localStorage entries
+  const syncFromBackend = useCallback(async () => {
+    if (!actor) return;
+    try {
+      const backendDeposits = await actor.getMyDeposits();
+      if (!backendDeposits || backendDeposits.length === 0) return;
+
+      const raw = localStorage.getItem("wealthstream_payment_history");
+      const entries: PaymentEntry[] = JSON.parse(raw || "[]");
+      let changed = false;
+
+      const updated = entries.map((entry) => {
+        if (entry.depositId === undefined) return entry;
+        const match = backendDeposits.find(
+          (d) => Number(d.id) === entry.depositId,
+        );
+        if (!match) return entry;
+
+        let newStatus: PaymentEntry["status"] = entry.status;
+        if ("Approved" in match.status) newStatus = "approved";
+        else if ("Rejected" in match.status) newStatus = "rejected";
+        else if ("Pending" in match.status && entry.status === "detecting") {
+          // Keep detecting/verifying — don't override
+          return entry;
+        }
+
+        if (newStatus !== entry.status) {
+          changed = true;
+          return { ...entry, status: newStatus };
+        }
+        return entry;
+      });
+
+      if (changed) {
+        localStorage.setItem(
+          "wealthstream_payment_history",
+          JSON.stringify(updated),
+        );
+        setHistory(updated.sort((a, b) => b.submittedAt - a.submittedAt));
+      }
+    } catch {
+      // ignore
+    }
+  }, [actor]);
+
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
+  // Sync status from backend immediately and every 30s
+  useEffect(() => {
+    void syncFromBackend();
+    const id = setInterval(() => void syncFromBackend(), 30_000);
+    return () => clearInterval(id);
+  }, [syncFromBackend]);
+
   // Re-render every 10s so detecting statuses update in real time
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 10_000);
-    return () => clearInterval(interval);
+    const id = setInterval(() => {
+      setHistory((h) => [...h]);
+    }, 10_000);
+    return () => clearInterval(id);
   }, []);
 
   return (
@@ -90,7 +154,10 @@ export default function PaymentHistoryPage() {
         <h1 className="text-xl font-bold text-white">Payment History</h1>
         <button
           type="button"
-          onClick={loadHistory}
+          onClick={() => {
+            loadHistory();
+            void syncFromBackend();
+          }}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all active:scale-95"
           style={{
             background: "rgba(255,255,255,0.06)",
@@ -244,7 +311,7 @@ export default function PaymentHistoryPage() {
                 </div>
               </div>
 
-              {/* Detecting note */}
+              {/* Status messages */}
               {effectiveStatus === "detecting" && (
                 <div
                   className="rounded-xl p-3 text-xs leading-relaxed"

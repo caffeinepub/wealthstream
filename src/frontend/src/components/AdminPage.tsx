@@ -106,9 +106,6 @@ export default function AdminPage({ actor }: Props) {
   const [editValues, setEditValues] = useState<
     Record<string, { deposited: string; withdrawable: string; frozen: string }>
   >({});
-  const [maintenanceMode, setMaintenanceMode] = useState(
-    () => localStorage.getItem("maintenanceMode") === "true",
-  );
   const [freezeSchedule, setFreezeSchedule] = useState<Record<string, string>>(
     {},
   );
@@ -168,6 +165,13 @@ export default function AdminPage({ actor }: Props) {
   useEffect(() => {
     if (pinVerified) loadUpiConfig();
   }, [pinVerified, loadUpiConfig]);
+
+  // Auto-refresh all admin data every 30s when panel is unlocked
+  useEffect(() => {
+    if (!pinVerified || !actor) return;
+    const id = setInterval(() => void load(), 30_000);
+    return () => clearInterval(id);
+  }, [pinVerified, actor, load]);
 
   const approveDeposit = async (id: bigint) => {
     if (!actor) return;
@@ -254,14 +258,6 @@ export default function AdminPage({ actor }: Props) {
       }
       return next;
     });
-  };
-
-  const toggleMaintenance = (val: boolean) => {
-    setMaintenanceMode(val);
-    localStorage.setItem("maintenanceMode", String(val));
-    toast.success(
-      val ? "Maintenance mode ENABLED" : "Maintenance mode DISABLED",
-    );
   };
 
   const pendingDeposits = deposits.filter((d) => "Pending" in d.status);
@@ -1435,54 +1431,6 @@ export default function AdminPage({ actor }: Props) {
   const SystemSettings = () => (
     <div className="p-6 space-y-6">
       <h2 className="text-xl font-bold text-white">System Settings</h2>
-
-      {/* Maintenance Mode Master Switch */}
-      <div
-        className="rounded-2xl p-5"
-        style={{
-          background: "rgba(13,20,32,0.8)",
-          border: maintenanceMode
-            ? "1px solid rgba(239,68,68,0.3)"
-            : "1px solid rgba(255,255,255,0.07)",
-          boxShadow: maintenanceMode ? "0 0 30px rgba(239,68,68,0.1)" : "none",
-        }}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-base font-bold text-white">
-              🔧 Maintenance Mode
-            </p>
-            <p className="text-xs mt-1" style={{ color: "#A8B2BA" }}>
-              Master switch — pushes full-screen overlay to all users
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => toggleMaintenance(!maintenanceMode)}
-            className="relative w-14 h-7 rounded-full transition-all duration-300 flex-shrink-0"
-            style={{
-              background: maintenanceMode ? "#EF4444" : "rgba(255,255,255,0.1)",
-            }}
-            data-ocid="admin.maintenance_toggle"
-          >
-            <span
-              className="absolute top-1 w-5 h-5 rounded-full bg-white transition-all duration-300"
-              style={{ left: maintenanceMode ? "calc(100% - 24px)" : "4px" }}
-            />
-          </button>
-        </div>
-        <div
-          className="mt-4 rounded-xl p-3 text-xs text-center"
-          style={{
-            background: "rgba(0,0,0,0.3)",
-            border: "1px solid rgba(255,255,255,0.06)",
-            color: "#A8B2BA",
-          }}
-        >
-          When enabled, app users see a maintenance screen. Admin panel is
-          always accessible.
-        </div>
-      </div>
 
       {/* UPI Settings */}
       <div

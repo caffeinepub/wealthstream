@@ -86,6 +86,7 @@ export type UserRole = { admin: null } | { user: null } | { guest: null };
 
 import type { backendInterface } from "./backend";
 export interface WealthActorExtended extends backendInterface {
+  getMyDeposits(): Promise<DepositRequest[]>;
   getUpiConfig(): Promise<UpiConfig>;
   setUpiConfig(
     upiId: string,

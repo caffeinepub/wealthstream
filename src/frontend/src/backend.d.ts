@@ -89,6 +89,7 @@ export interface backendInterface {
     lookupIFSC(ifsc: string): Promise<{ ok: IFSCResult } | { err: string }>;
     getMySlots(): Promise<InvestmentSlot[]>;
     getMyWithdrawals(): Promise<WithdrawalRequest[]>;
+    getMyDeposits(): Promise<DepositRequest[]>;
     getBankDetails(): Promise<[] | [BankDetails]>;
     getPendingDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
     getAllDeposits(): Promise<{ ok: DepositRequest[] } | { err: string }>;
